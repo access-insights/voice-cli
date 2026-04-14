@@ -1,8 +1,16 @@
 import type { RendererAppState } from './app-state.ts';
 import { renderAppShell } from '../ui/app-shell-renderer.ts';
-import { summarizeRuntimeHealth } from '../runtime/runtime-summary.ts';
+import { summarizeRuntimeHealth, type RuntimeHealthSummary } from '../runtime/runtime-summary.ts';
+import type { StoredSessionSummary } from '../persistence/session-history.ts';
+import type { ConfirmationRequest } from '../safety/confirmation-flow.ts';
+import type { SessionControlState } from './session-controls.ts';
 
-export function renderRendererApp(state: RendererAppState): string {
+export function renderRendererApp(state: RendererAppState, options?: {
+  runtimeSummary?: RuntimeHealthSummary;
+  history?: StoredSessionSummary[];
+  confirmation?: ConfirmationRequest | null;
+  controls?: SessionControlState;
+}): string {
   return renderAppShell({
     transcript: state.transcript,
     settings: state.settings,
@@ -12,8 +20,10 @@ export function renderRendererApp(state: RendererAppState): string {
       exitCode: 0,
       spokenSummary: state.sessionSummary,
     },
-    runtimeSummary: summarizeRuntimeHealth([]),
+    runtimeSummary: options?.runtimeSummary ?? summarizeRuntimeHealth([]),
     detail: null,
-    history: [],
+    history: options?.history ?? [],
+    confirmation: options?.confirmation ?? null,
+    controls: options?.controls,
   });
 }
