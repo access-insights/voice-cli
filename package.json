@@ -1,0 +1,23 @@
+{
+  "name": "voice-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Voice-first desktop wrapper for agentic CLI tools",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/main.ts",
+  "scripts": {
+    "lint": "echo 'lint placeholder'",
+    "test": "echo 'test placeholder'",
+    "typecheck": "echo 'typecheck placeholder'",
+    "build": "echo 'build placeholder'",
+    "dev": "node src/main.ts",
+    "slice": "bash ./scripts/run-vertical-slice.sh",
+    "slice:pty": "bash ./scripts/run-node-pty-placeholder.sh",
+    "check:release": "bash ./scripts/check-release-foundations.sh",
+    "pages:build": "mkdir -p .site && cp website/index.html .site/index.html"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  }
+}

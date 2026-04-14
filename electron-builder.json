@@ -1,0 +1,22 @@
+{
+  "appId": "ai.access-insights.voice-cli",
+  "productName": "voice-cli",
+  "files": [
+    "src/**/*",
+    "website/**/*",
+    "package.json"
+  ],
+  "directories": {
+    "output": "dist"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "category": "public.app-category.productivity"
+  },
+  "win": {
+    "target": ["nsis"]
+  },
+  "linux": {
+    "target": ["AppImage", "deb"]
+  }
+}

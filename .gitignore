@@ -1,0 +1,6 @@
+.voice-cli/
+node_modules/
+.site/
+dist/
+out/
+*.log

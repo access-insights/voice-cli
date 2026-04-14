@@ -1,0 +1,24 @@
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  repo-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required docs present
+        run: |
+          test -f README.md
+          test -f docs/architecture/overview.md
+          test -f docs/accessibility-statement.md
+          test -f docs/support-matrix.md
+          test -f docs/pages/quick-start.md
+      - name: Required scripts present
+        run: |
+          test -f scripts/run-vertical-slice.sh
+          test -f scripts/render-app-preview.sh
+          test -f scripts/render-electron-preview.sh

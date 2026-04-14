@@ -1,0 +1,5 @@
+{
+  "entry": "src/electron/main-process.ts",
+  "preload": "src/electron/preload.ts",
+  "rendererHtml": "website/app-shell.html"
+}

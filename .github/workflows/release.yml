@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  beta-build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show packaging config
+        run: |
+          cat electron-builder.json
+      - name: Placeholder packaging step
+        run: |
+          echo "Packaging placeholder for ${{ matrix.os }}"
+          echo "Unsigned beta builds allowed in current policy."
+      - name: Upload placeholder artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-cli-${{ matrix.os }}
+          path: README.md
