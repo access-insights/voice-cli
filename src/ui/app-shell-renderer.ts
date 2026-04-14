@@ -44,6 +44,11 @@ export function renderAppShell(params: {
       <p>Start available: ${params.controls.canStartSession ? 'yes' : 'no'}</p>
       <p>Input available: ${params.controls.canSendInput ? 'yes' : 'no'}</p>
       <p>Draft response: ${params.controls.currentInputDraft || '(empty)'}</p>
+      <form id="session-start-form">
+        <label for="session-start-prompt">Start prompt</label>
+        <input id="session-start-prompt" name="prompt" type="text" value="Summarize the current project state." />
+        <button id="session-start-button" type="submit">Start session</button>
+      </form>
     </section>
   ` : '';
 
