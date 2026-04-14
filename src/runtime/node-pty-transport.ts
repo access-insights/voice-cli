@@ -9,6 +9,7 @@ export class NodePtyTransport implements TerminalTransport {
   private events: SessionEvent[] = [];
   private eventListeners: Array<(event: SessionEvent) => void> = [];
   private exitListeners: Array<(exitCode: number) => void> = [];
+  private stopped = false;
 
   start(options: TransportStartOptions): void {
     this.ptyProcess = pty.spawn(options.command, options.args, {
@@ -40,16 +41,32 @@ export class NodePtyTransport implements TerminalTransport {
         type: 'session.exited',
         timestamp: new Date().toISOString(),
         summary: `PTY process exited with code ${exitCode}.`,
-        metadata: { exitCode, transport: 'node-pty' },
+        metadata: { exitCode, transport: 'node-pty', stopped: this.stopped },
       };
       this.events.push(exitEvent);
       this.emitEvent(exitEvent);
       for (const listener of this.exitListeners) listener(exitCode);
+      this.ptyProcess = null;
     });
   }
 
   sendInput(input: string): void {
     this.ptyProcess?.write(input);
+  }
+
+  stop(reason = 'Stopped by controller'): void {
+    if (!this.ptyProcess) return;
+    this.stopped = true;
+    const event: SessionEvent = {
+      type: 'summary.generated',
+      timestamp: new Date().toISOString(),
+      summary: reason,
+      metadata: { transport: 'node-pty' },
+    };
+    this.events.push(event);
+    this.emitEvent(event);
+    this.ptyProcess.kill();
+    this.ptyProcess = null;
   }
 
   getEvents(): SessionEvent[] {

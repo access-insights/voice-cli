@@ -25,23 +25,11 @@ export async function runManagedSession(request: RuntimeSessionStartRequest) {
   const session = createTransport(transportKind);
 
   return await new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      const events = session.getEvents();
-      const summary = summarizeSessionEvents(events);
-      resolve({
-        adapter: adapter.id,
-        transport: transportKind,
-        exitCode: -2,
-        events,
-        spokenSummary: summary.headline,
-      });
-    }, 15000);
+    let settled = false;
 
-    session.onEvent((event) => {
-      request.onEvent?.(event);
-    });
-
-    session.onExit((exitCode) => {
+    const finish = (exitCode: number) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
       const events = session.getEvents();
       const summary = summarizeSessionEvents(events);
@@ -52,6 +40,19 @@ export async function runManagedSession(request: RuntimeSessionStartRequest) {
         events,
         spokenSummary: summary.headline,
       });
+    };
+
+    const timeout = setTimeout(() => {
+      session.stop('Session timed out before completion.');
+      finish(-2);
+    }, 15000);
+
+    session.onEvent((event) => {
+      request.onEvent?.(event);
+    });
+
+    session.onExit((exitCode) => {
+      finish(exitCode);
     });
 
     session.start({

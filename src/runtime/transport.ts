@@ -9,6 +9,7 @@ export interface TransportStartOptions {
 export interface TerminalTransport {
   start(options: TransportStartOptions): void;
   sendInput(input: string): void;
+  stop(reason?: string): void;
   getEvents(): SessionEvent[];
   onEvent(listener: (event: SessionEvent) => void): void;
   onExit(listener: (exitCode: number) => void): void;

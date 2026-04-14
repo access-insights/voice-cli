@@ -8,6 +8,7 @@ export class SpawnTransport implements TerminalTransport {
   private child: ReturnType<typeof spawn> | null = null;
   private events: SessionEvent[] = [];
   private emitter = new EventEmitter();
+  private stopped = false;
 
   start(options: TransportStartOptions): void {
     this.child = spawn(options.command, options.args, {
@@ -35,21 +36,36 @@ export class SpawnTransport implements TerminalTransport {
       this.emitter.emit('event', event);
     });
 
-    this.child.on('exit', (code) => {
+    this.child.on('exit', (code, signal) => {
       const event: SessionEvent = {
         type: 'session.exited',
         timestamp: new Date().toISOString(),
         summary: `Process exited with code ${code ?? -1}.`,
-        metadata: { exitCode: code ?? -1, transport: 'spawn' },
+        metadata: { exitCode: code ?? -1, signal: signal ?? null, transport: 'spawn', stopped: this.stopped },
       };
       this.events.push(event);
       this.emitter.emit('event', event);
       this.emitter.emit('exit', code ?? -1);
+      this.child = null;
     });
   }
 
   sendInput(input: string): void {
     this.child?.stdin?.write(input);
+  }
+
+  stop(reason = 'Stopped by controller'): void {
+    if (!this.child || this.child.killed) return;
+    this.stopped = true;
+    const event: SessionEvent = {
+      type: 'summary.generated',
+      timestamp: new Date().toISOString(),
+      summary: reason,
+      metadata: { transport: 'spawn' },
+    };
+    this.events.push(event);
+    this.emitter.emit('event', event);
+    this.child.kill('SIGTERM');
   }
 
   getEvents(): SessionEvent[] {
