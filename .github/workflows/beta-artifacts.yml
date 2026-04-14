@@ -1,0 +1,24 @@
+name: Beta Artifacts
+
+on:
+  workflow_dispatch:
+
+jobs:
+  prepare-beta:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare release notes placeholder
+        run: |
+          mkdir -p dist/release-notes
+          cat > dist/release-notes/BETA-NOTES.txt <<'EOF'
+          voice-cli beta artifact placeholder
+          - unsigned beta allowed
+          - first supported CLI: Codex CLI
+          - accessibility review still required before public beta
+          EOF
+      - name: Upload beta notes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-cli-beta-notes
+          path: dist/release-notes/BETA-NOTES.txt
