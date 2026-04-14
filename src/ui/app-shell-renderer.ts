@@ -11,6 +11,9 @@ import { renderDetailPanel } from './detail-panel.ts';
 import type { DetailRequestResult } from '../session/detail-requests.ts';
 import { renderHistoryPanel } from './history-panel.ts';
 import type { StoredSessionSummary } from '../persistence/session-history.ts';
+import { renderConfirmationPanel } from './confirmation-panel.ts';
+import type { ConfirmationRequest } from '../safety/confirmation-flow.ts';
+import type { SessionControlState } from '../renderer/session-controls.ts';
 
 export function renderAppShell(params: {
   transcript: TranscriptLine[];
@@ -20,6 +23,8 @@ export function renderAppShell(params: {
   runtimeSummary?: RuntimeHealthSummary;
   detail?: DetailRequestResult | null;
   history?: StoredSessionSummary[];
+  confirmation?: ConfirmationRequest | null;
+  controls?: SessionControlState;
 }): string {
   const transcriptHtml = renderTranscriptShell(params.transcript)
     .replace('<!doctype html>', '')
@@ -32,6 +37,15 @@ export function renderAppShell(params: {
   const runtimeBanner = params.runtimeSummary ? renderRuntimeStatusBanner(params.runtimeSummary) : '';
   const detailPanel = renderDetailPanel(params.detail ?? null);
   const historyPanel = renderHistoryPanel(params.history ?? []);
+  const confirmationPanel = params.confirmation ? renderConfirmationPanel(params.confirmation) : '';
+  const controlsPanel = params.controls ? `
+    <section aria-labelledby="controls-heading">
+      <h2 id="controls-heading">Session controls</h2>
+      <p>Start available: ${params.controls.canStartSession ? 'yes' : 'no'}</p>
+      <p>Input available: ${params.controls.canSendInput ? 'yes' : 'no'}</p>
+      <p>Draft response: ${params.controls.currentInputDraft || '(empty)'}</p>
+    </section>
+  ` : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -47,6 +61,8 @@ export function renderAppShell(params: {
       ${renderOnboardingPanel(params.onboarding)}
       ${renderSettingsPanel(params.settings)}
       ${renderSessionStatusPanel(params.session)}
+      ${controlsPanel}
+      ${confirmationPanel}
       ${historyPanel}
       ${detailPanel}
       ${transcriptHtml}
