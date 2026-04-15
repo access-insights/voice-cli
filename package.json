@@ -5,7 +5,7 @@
   "description": "Voice-first desktop wrapper for agentic CLI tools",
   "license": "MIT",
   "type": "module",
-  "main": "src/main.ts",
+  "main": "src/electron/electron-main-entry.ts",
   "scripts": {
     "lint": "echo 'lint placeholder'",
     "test": "echo 'test placeholder'",
@@ -13,12 +13,14 @@
     "build": "echo 'build placeholder'",
     "dev": "node src/main.ts",
     "dev:electron-adapter": "bash ./scripts/run-electron-adapter-preview.sh",
+    "dev:electron-real": "bash ./scripts/run-electron-real-smoke.sh",
     "slice": "bash ./scripts/run-vertical-slice.sh",
     "slice:pty": "bash ./scripts/run-node-pty-placeholder.sh",
     "check:release": "bash ./scripts/check-release-foundations.sh",
     "pages:build": "mkdir -p .site && cp website/index.html .site/index.html"
   },
   "dependencies": {
+    "electron": "^35.0.0",
     "node-pty": "^1.1.0"
   }
 }
