@@ -48,3 +48,7 @@ export function exposePreloadApi(target: Record<string, unknown>) {
   target.voiceCli = getBrowserSafePreloadApi();
   return target;
 }
+
+export function contextBridgeExpose(target: Record<string, unknown>) {
+  return exposePreloadApi(target);
+}
