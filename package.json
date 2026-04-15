@@ -12,6 +12,7 @@
     "typecheck": "echo 'typecheck placeholder'",
     "build": "echo 'build placeholder'",
     "dev": "node src/main.ts",
+    "dev:electron-adapter": "bash ./scripts/run-electron-adapter-preview.sh",
     "slice": "bash ./scripts/run-vertical-slice.sh",
     "slice:pty": "bash ./scripts/run-node-pty-placeholder.sh",
     "check:release": "bash ./scripts/check-release-foundations.sh",
