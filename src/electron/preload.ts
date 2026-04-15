@@ -1,7 +1,7 @@
 import { createIpcContract } from './ipc-contract.ts';
-import { createElectronMainBootstrap } from './main-bootstrap.ts';
+import { createElectronMainHandlers } from './main-handlers.ts';
 
-const bootstrap = createElectronMainBootstrap();
+const handlers = createElectronMainHandlers();
 
 export const preloadApiContract = {
   session: {
@@ -25,15 +25,15 @@ export const preloadApiContract = {
 
 export const preloadApi = {
   session: {
-    start: (prompt: string) => bootstrap.sessionApi.start(prompt),
-    sendInput: (input: string) => bootstrap.sessionApi.sendInput(input),
-    getHistory: () => bootstrap.sessionApi.getHistory(),
-    getState: () => bootstrap.sessionApi.getState(),
-    onEvent: (listener: Parameters<typeof bootstrap.sessionApi.onEvent>[0]) => bootstrap.sessionApi.onEvent(listener),
+    start: (prompt: string) => handlers.session.start(prompt),
+    sendInput: (input: string) => handlers.session.sendInput(input),
+    getHistory: () => handlers.session.getHistory(),
+    getState: () => handlers.session.getState(),
+    onEvent: (listener: Parameters<typeof handlers.session.onEvent>[0]) => handlers.session.onEvent(listener),
   },
   electron: {
-    getShellSummary: () => bootstrap.shell,
-    getConfig: () => bootstrap.config,
+    getShellSummary: () => handlers.electron.getShellSummary(),
+    getConfig: () => handlers.electron.getConfig(),
   },
 };
 
@@ -42,4 +42,9 @@ export function getBrowserSafePreloadApi() {
     session: preloadApi.session,
     electron: preloadApi.electron,
   };
+}
+
+export function exposePreloadApi(target: Record<string, unknown>) {
+  target.voiceCli = getBrowserSafePreloadApi();
+  return target;
 }
