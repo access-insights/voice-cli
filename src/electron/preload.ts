@@ -1,10 +1,7 @@
-import { join } from 'node:path';
 import { createIpcContract } from './ipc-contract.ts';
-import { createSessionIpcApi } from './session-ipc.ts';
+import { createElectronMainBootstrap } from './main-bootstrap.ts';
 
-const projectPath = process.cwd();
-const transcriptDir = join(projectPath, '.voice-cli', 'sessions');
-const sessionApi = createSessionIpcApi(projectPath, transcriptDir);
+const bootstrap = createElectronMainBootstrap();
 
 export const preloadApiContract = {
   session: {
@@ -28,10 +25,21 @@ export const preloadApiContract = {
 
 export const preloadApi = {
   session: {
-    start: (prompt: string) => sessionApi.start(prompt),
-    sendInput: (input: string) => sessionApi.sendInput(input),
-    getHistory: () => sessionApi.getHistory(),
-    getState: () => sessionApi.getState(),
-    onEvent: (listener: Parameters<typeof sessionApi.onEvent>[0]) => sessionApi.onEvent(listener),
+    start: (prompt: string) => bootstrap.sessionApi.start(prompt),
+    sendInput: (input: string) => bootstrap.sessionApi.sendInput(input),
+    getHistory: () => bootstrap.sessionApi.getHistory(),
+    getState: () => bootstrap.sessionApi.getState(),
+    onEvent: (listener: Parameters<typeof bootstrap.sessionApi.onEvent>[0]) => bootstrap.sessionApi.onEvent(listener),
+  },
+  electron: {
+    getShellSummary: () => bootstrap.shell,
+    getConfig: () => bootstrap.config,
   },
 };
+
+export function getBrowserSafePreloadApi() {
+  return {
+    session: preloadApi.session,
+    electron: preloadApi.electron,
+  };
+}
