@@ -49,6 +49,15 @@ export function exposePreloadApi(target: Record<string, unknown>) {
   return target;
 }
 
-export function contextBridgeExpose(target: Record<string, unknown>) {
-  return exposePreloadApi(target);
+export function contextBridgeExpose(target: Record<string, unknown>, bridge?: { exposeInMainWorld(name: string, api: unknown): void }) {
+  const api = getBrowserSafePreloadApi();
+  if (bridge?.exposeInMainWorld) {
+    bridge.exposeInMainWorld('voiceCli', api);
+    return {
+      ...target,
+      __bridgedApi: api,
+    };
+  }
+  target.voiceCli = api;
+  return target;
 }
