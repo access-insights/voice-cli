@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-./node_modules/.bin/electron . --no-sandbox
+VOICE_CLI_AUTO_EXIT=1 ./node_modules/.bin/electron . --no-sandbox
