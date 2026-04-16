@@ -15,6 +15,7 @@
     "dev:electron-adapter": "bash ./scripts/run-electron-adapter-preview.sh",
     "dev:electron-real": "bash ./scripts/run-electron-real-smoke.sh",
     "dev:electron-bin": "electron .",
+    "dev:electron-no-sandbox": "bash ./scripts/run-electron-no-sandbox.sh",
     "slice": "bash ./scripts/run-vertical-slice.sh",
     "slice:pty": "bash ./scripts/run-node-pty-placeholder.sh",
     "check:release": "bash ./scripts/check-release-foundations.sh",
