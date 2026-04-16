@@ -6,7 +6,7 @@ function writePageDiagnostic(message) {
   }
 }
 
-function renderFallbackShell(runtimeState, history) {
+function renderShell(runtimeState, history) {
   return `
     <section aria-labelledby="runtime-heading">
       <h2 id="runtime-heading">Runtime status</h2>
@@ -23,8 +23,19 @@ function renderFallbackShell(runtimeState, history) {
     <section aria-labelledby="history-heading">
       <h2 id="history-heading">Session history</h2>
       <p>${history.length} recorded sessions.</p>
+      <ul>${history.map((item) => `<li>${item.fileName} | ${item.adapter} | exit ${item.exitCode} | ${item.spokenSummary}</li>`).join('')}</ul>
     </section>
   `;
+}
+
+function renderIntoTarget(target) {
+  const runtimeState = window.voiceCli?.session?.getState?.() ?? {
+    runtimeSummary: { status: 'ok', headline: 'Electron runtime ready.' },
+    confirmation: null,
+    controls: { canStartSession: true, canSendInput: false, currentInputDraft: '' },
+  };
+  const history = window.voiceCli?.session?.getHistory?.() ?? [];
+  target.innerHTML = renderShell(runtimeState, history);
 }
 
 function mount() {
@@ -34,15 +45,13 @@ function mount() {
     throw new Error('Missing #app mount target.');
   }
 
-  const runtimeState = window.voiceCli?.session?.getState?.() ?? {
-    runtimeSummary: { status: 'ok', headline: 'Electron runtime ready.' },
-    confirmation: null,
-    controls: { canStartSession: true, canSendInput: false, currentInputDraft: '' },
-  };
-  const history = window.voiceCli?.session?.getHistory?.() ?? [];
+  renderIntoTarget(target);
+  writePageDiagnostic('Runtime shell rendered into #app.');
 
-  target.innerHTML = renderFallbackShell(runtimeState, history);
-  writePageDiagnostic('Fallback shell rendered into #app.');
+  window.voiceCli?.session?.onEvent?.(() => {
+    renderIntoTarget(target);
+    writePageDiagnostic('Runtime shell rerendered after event.');
+  });
 
   const form = document.getElementById('session-start-form');
   const promptInput = document.getElementById('session-start-prompt');
@@ -54,6 +63,8 @@ function mount() {
         : 'Summarize the current project state.';
       writePageDiagnostic(`Submitting prompt: ${prompt}`);
       await window.voiceCli?.session?.start?.(prompt);
+      renderIntoTarget(target);
+      writePageDiagnostic('Runtime shell rerendered after start.');
     });
   }
 

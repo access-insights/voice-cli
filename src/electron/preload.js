@@ -1,12 +1,12 @@
 const { contextBridge } = require('electron');
 
+const history = [];
+const eventListeners = [];
 const runtimeState = {
-  runtimeSummary: { status: 'ok', headline: 'Electron preload JS bridge ready.' },
+  runtimeSummary: { status: 'ok', headline: 'Electron preload JS runtime bridge ready.' },
   confirmation: null,
   controls: { canStartSession: true, canSendInput: false, currentInputDraft: '' },
 };
-const history = [];
-const eventListeners = [];
 
 contextBridge.exposeInMainWorld('voiceCli', {
   session: {
@@ -15,22 +15,23 @@ contextBridge.exposeInMainWorld('voiceCli', {
         status: 'ok',
         headline: `Started session for prompt: ${prompt}`,
       };
-      const event = {
-        type: 'stream.chunk',
-        timestamp: new Date().toISOString(),
-        summary: `Started session for prompt: ${prompt}`,
-        raw: `Started session for prompt: ${prompt}`,
-        source: 'stdout',
-      };
-      for (const listener of eventListeners) listener(event);
-      history.unshift({
+      const entry = {
         fileName: `${Date.now()}-session.json`,
         adapter: 'codex',
         exitCode: 0,
         spokenSummary: runtimeState.runtimeSummary.headline,
         timestampGuess: `${Date.now()}`,
-      });
-      return { accepted: true, prompt };
+      };
+      history.unshift(entry);
+      const event = {
+        type: 'stream.chunk',
+        timestamp: new Date().toISOString(),
+        summary: runtimeState.runtimeSummary.headline,
+        raw: runtimeState.runtimeSummary.headline,
+        source: 'stdout',
+      };
+      for (const listener of eventListeners) listener(event);
+      return { accepted: true, prompt, entry };
     },
     sendInput: (input) => ({ accepted: true, echoedInput: input }),
     getHistory: () => history,
