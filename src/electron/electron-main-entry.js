@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { appendFileSync, mkdirSync } from 'node:fs';
 
 function createDesktopWindowSpec() {
   return {
@@ -19,6 +20,16 @@ function createElectronBootstrapConfig() {
   };
 }
 
+function getDiagnosticsPath(projectPath = process.cwd()) {
+  const dir = join(projectPath, '.voice-cli');
+  mkdirSync(dir, { recursive: true });
+  return join(dir, 'electron-runtime.log');
+}
+
+function writeDiagnostic(message, projectPath = process.cwd()) {
+  appendFileSync(getDiagnosticsPath(projectPath), `${new Date().toISOString()} ${message}\n`);
+}
+
 export function createRealElectronLaunchSpec(projectPath = process.cwd()) {
   const config = createElectronBootstrapConfig();
   const window = createDesktopWindowSpec();
@@ -36,6 +47,7 @@ export async function launchElectronApp(electronRuntime) {
   const spec = createRealElectronLaunchSpec();
 
   if (!electronRuntime?.app || !electronRuntime?.BrowserWindow) {
+    writeDiagnostic('Electron runtime not available.');
     return {
       launched: false,
       reason: 'Electron runtime not available.',
@@ -44,6 +56,8 @@ export async function launchElectronApp(electronRuntime) {
   }
 
   await electronRuntime.app.whenReady();
+  writeDiagnostic('Electron app ready.');
+
   const browserWindow = new electronRuntime.BrowserWindow({
     width: spec.window.width,
     height: spec.window.height,
@@ -52,7 +66,22 @@ export async function launchElectronApp(electronRuntime) {
       preload: spec.preloadPath,
     },
   });
+  writeDiagnostic(`BrowserWindow created with preload ${spec.preloadPath}`);
+
+  if (typeof browserWindow.webContents?.on === 'function') {
+    browserWindow.webContents.on('did-finish-load', () => {
+      writeDiagnostic('Renderer finished load.');
+    });
+    browserWindow.webContents.on('did-fail-load', (_event, code, description) => {
+      writeDiagnostic(`Renderer failed load: ${code} ${description}`);
+    });
+    browserWindow.webContents.on('console-message', (_event, level, message) => {
+      writeDiagnostic(`Renderer console[${level}]: ${message}`);
+    });
+  }
+
   await browserWindow.loadURL(spec.rendererUrl);
+  writeDiagnostic(`Renderer loadURL called for ${spec.rendererUrl}`);
 
   return {
     launched: true,
@@ -66,6 +95,7 @@ if (process.versions.electron) {
     app: electronModule.app,
     BrowserWindow: electronModule.BrowserWindow,
   }).catch((error) => {
+    writeDiagnostic(`Launch error: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     console.error(error);
     process.exitCode = 1;
   });
