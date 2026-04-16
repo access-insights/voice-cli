@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { appendFileSync, mkdirSync } from 'node:fs';
+import { loadSessionSummaries, persistSessionSummary } from './main-session-storage.js';
 
 function createDesktopWindowSpec() {
   return {
@@ -69,8 +70,12 @@ export async function launchElectronApp(electronRuntime) {
   writeDiagnostic(`BrowserWindow created with preload ${spec.preloadPath}`);
 
   if (typeof browserWindow.webContents?.on === 'function') {
-    browserWindow.webContents.on('did-finish-load', () => {
+    browserWindow.webContents.on('did-finish-load', async () => {
       writeDiagnostic('Renderer finished load.');
+      await browserWindow.webContents.executeJavaScript(`window.voiceCli?.session?.configurePersistence?.({
+        loadHistory: () => ${JSON.stringify(loadSessionSummaries(process.cwd()))},
+        persistHistory: (entry) => ({ filePath: 'main-process-backed', entry })
+      });`);
       if (process.env.VOICE_CLI_AUTO_EXIT === '1') {
         writeDiagnostic('Main process auto-exit requested after did-finish-load.');
         setTimeout(() => {
