@@ -161,5 +161,6 @@ contextBridge.exposeInMainWorld('voiceCli', {
     getShellSummary: () => ({ appName: 'voice-cli', windowTitle: 'voice-cli', startRoute: '/' }),
     getConfig: () => ({ appId: 'ai.access-insights.voice-cli', windowTitle: 'voice-cli', rendererEntryHtml: 'website/app-shell.html', preloadEntry: 'src/electron/preload.js' }),
     shouldAutoExit: () => process.env.VOICE_CLI_AUTO_EXIT === '1',
+    getTestMode: () => process.env.VOICE_CLI_TEST_MODE || '',
   },
 });

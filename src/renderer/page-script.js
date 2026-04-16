@@ -100,11 +100,23 @@ function mount() {
     writePageDiagnostic('Runtime shell rerendered after event.');
   });
 
+  const testMode = window.voiceCli?.electron?.getTestMode?.() || '';
+  if (testMode === 'confirmation') {
+    window.voiceCli?.session?.start?.('Please approve file changes?');
+    renderIntoTarget(target);
+    writePageDiagnostic('Test mode seeded confirmation flow.');
+    setTimeout(async () => {
+      await window.voiceCli?.session?.sendInput?.('yes');
+      renderIntoTarget(target);
+      writePageDiagnostic('Test mode auto-approved confirmation flow.');
+    }, 150);
+  }
+
   if (window.voiceCli?.electron?.shouldAutoExit?.()) {
     writePageDiagnostic('Auto-exit requested.');
     setTimeout(() => {
       window.close();
-    }, 500);
+    }, testMode === 'confirmation' ? 1200 : 500);
   }
 }
 
