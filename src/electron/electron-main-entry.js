@@ -71,12 +71,25 @@ export async function launchElectronApp(electronRuntime) {
   if (typeof browserWindow.webContents?.on === 'function') {
     browserWindow.webContents.on('did-finish-load', () => {
       writeDiagnostic('Renderer finished load.');
+      if (process.env.VOICE_CLI_AUTO_EXIT === '1') {
+        writeDiagnostic('Main process auto-exit requested after did-finish-load.');
+        setTimeout(() => {
+          browserWindow.close();
+          if (typeof electronRuntime.app?.quit === 'function') {
+            electronRuntime.app.quit();
+          }
+        }, 500);
+      }
     });
     browserWindow.webContents.on('did-fail-load', (_event, code, description) => {
       writeDiagnostic(`Renderer failed load: ${code} ${description}`);
     });
-    browserWindow.webContents.on('console-message', (_event, level, message) => {
-      writeDiagnostic(`Renderer console[${level}]: ${message}`);
+    browserWindow.webContents.on('console-message', (eventOrLevel, levelOrMessage, maybeMessage) => {
+      if (typeof eventOrLevel === 'object' && eventOrLevel !== null && 'message' in eventOrLevel) {
+        writeDiagnostic(`Renderer console[${eventOrLevel.level}]: ${eventOrLevel.message}`);
+        return;
+      }
+      writeDiagnostic(`Renderer console[${levelOrMessage}]: ${maybeMessage}`);
     });
   }
 
