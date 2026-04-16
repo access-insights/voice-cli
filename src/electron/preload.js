@@ -1,4 +1,4 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 function now() {
   return new Date().toISOString();
@@ -87,8 +87,6 @@ function createRuntimeBridge() {
   let confirmation = null;
   let controls = { canStartSession: true, canSendInput: false, currentInputDraft: '' };
   let runtimeSummary = summarizeRuntimeHealth([]);
-  let historyLoader = () => [];
-  let historyPersister = () => null;
 
   function emit(event) {
     events.push(event);
@@ -103,11 +101,7 @@ function createRuntimeBridge() {
   }
 
   return {
-    configurePersistence({ loadHistory, persistHistory }) {
-      historyLoader = loadHistory;
-      historyPersister = persistHistory;
-    },
-    start(prompt) {
+    async start(prompt) {
       emit(createStreamEvent('stdout', `Started session for prompt: ${prompt}`));
       if (/approve|permission|allow/i.test(prompt)) {
         emit(createStreamEvent('stdout', 'Approve file changes?'));
@@ -117,7 +111,7 @@ function createRuntimeBridge() {
         exitCode: 0,
         spokenSummary: runtimeSummary.headline,
       };
-      historyPersister(entry);
+      await ipcRenderer.invoke('voice-cli:persist-history', entry);
       return { accepted: true, prompt, runtimeSummary };
     },
     sendInput(input) {
@@ -136,7 +130,7 @@ function createRuntimeBridge() {
       return { accepted: true, echoedInput: response.responseText };
     },
     getHistory() {
-      return historyLoader();
+      return ipcRenderer.invoke('voice-cli:load-history');
     },
     getState() {
       return {
@@ -160,7 +154,6 @@ contextBridge.exposeInMainWorld('voiceCli', {
     getHistory: () => runtimeBridge.getHistory(),
     getState: () => runtimeBridge.getState(),
     onEvent: (listener) => runtimeBridge.onEvent(listener),
-    configurePersistence: (config) => runtimeBridge.configurePersistence(config),
   },
   electron: {
     getShellSummary: () => ({ appName: 'voice-cli', windowTitle: 'voice-cli', startRoute: '/' }),

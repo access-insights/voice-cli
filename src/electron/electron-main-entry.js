@@ -72,11 +72,6 @@ export async function launchElectronApp(electronRuntime) {
   if (typeof browserWindow.webContents?.on === 'function') {
     browserWindow.webContents.on('did-finish-load', async () => {
       writeDiagnostic('Renderer finished load.');
-      const initialHistory = loadSessionSummaries(process.cwd());
-      await browserWindow.webContents.executeJavaScript(`window.voiceCli?.session?.configurePersistence?.({
-        loadHistory: () => ${JSON.stringify(initialHistory)},
-        persistHistory: (entry) => ({ filePath: 'main-process-backed', entry })
-      });`);
       if (process.env.VOICE_CLI_TEST_MODE === 'confirmation-persist') {
         const persisted = persistSessionSummary(process.cwd(), {
           adapter: 'codex',
@@ -118,6 +113,12 @@ export async function launchElectronApp(electronRuntime) {
 
 if (process.versions.electron) {
   const electronModule = await import('electron');
+  electronModule.ipcMain.handle('voice-cli:load-history', () => loadSessionSummaries(process.cwd()));
+  electronModule.ipcMain.handle('voice-cli:persist-history', (_event, entry) => {
+    const filePath = persistSessionSummary(process.cwd(), entry);
+    writeDiagnostic(`IPC persisted session summary at ${filePath}`);
+    return { filePath };
+  });
   launchElectronApp({
     app: electronModule.app,
     BrowserWindow: electronModule.BrowserWindow,

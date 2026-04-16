@@ -42,7 +42,7 @@ function renderShell(runtimeState, history) {
   `;
 }
 
-function bindInteractions(target) {
+async function bindInteractions(target) {
   const form = document.getElementById('session-start-form');
   const promptInput = document.getElementById('session-start-prompt');
   if (form) {
@@ -53,7 +53,7 @@ function bindInteractions(target) {
         : 'Summarize the current project state.';
       writePageDiagnostic(`Submitting prompt: ${prompt}`);
       await window.voiceCli?.session?.start?.(prompt);
-      renderIntoTarget(target);
+      await renderIntoTarget(target);
       writePageDiagnostic('Runtime shell rerendered after start.');
     });
   }
@@ -68,46 +68,47 @@ function bindInteractions(target) {
         : 'yes';
       writePageDiagnostic(`Submitting confirmation response: ${response}`);
       await window.voiceCli?.session?.sendInput?.(response);
-      renderIntoTarget(target);
+      await renderIntoTarget(target);
       writePageDiagnostic('Runtime shell rerendered after input response.');
     });
   }
 }
 
-function renderIntoTarget(target) {
+async function renderIntoTarget(target) {
   const runtimeState = window.voiceCli?.session?.getState?.() ?? {
     runtimeSummary: { status: 'ok', headline: 'Electron runtime ready.' },
     confirmation: null,
     controls: { canStartSession: true, canSendInput: false, currentInputDraft: '' },
   };
-  const history = window.voiceCli?.session?.getHistory?.() ?? [];
+  const historyResult = await window.voiceCli?.session?.getHistory?.();
+  const history = Array.isArray(historyResult) ? historyResult : [];
   target.innerHTML = renderShell(runtimeState, history);
-  bindInteractions(target);
+  await bindInteractions(target);
 }
 
-function mount() {
+async function mount() {
   writePageDiagnostic('DOMContentLoaded fired.');
   const target = document.getElementById('app');
   if (!target) {
     throw new Error('Missing #app mount target.');
   }
 
-  renderIntoTarget(target);
+  await renderIntoTarget(target);
   writePageDiagnostic('Runtime shell rendered into #app.');
 
-  window.voiceCli?.session?.onEvent?.(() => {
-    renderIntoTarget(target);
+  window.voiceCli?.session?.onEvent?.(async () => {
+    await renderIntoTarget(target);
     writePageDiagnostic('Runtime shell rerendered after event.');
   });
 
   const testMode = window.voiceCli?.electron?.getTestMode?.() || '';
   if (testMode === 'confirmation') {
-    window.voiceCli?.session?.start?.('Please approve file changes?');
-    renderIntoTarget(target);
+    await window.voiceCli?.session?.start?.('Please approve file changes?');
+    await renderIntoTarget(target);
     writePageDiagnostic('Test mode seeded confirmation flow.');
     setTimeout(async () => {
       await window.voiceCli?.session?.sendInput?.('yes');
-      renderIntoTarget(target);
+      await renderIntoTarget(target);
       writePageDiagnostic('Test mode auto-approved confirmation flow.');
     }, 150);
   }
@@ -120,4 +121,8 @@ function mount() {
   }
 }
 
-window.addEventListener('DOMContentLoaded', mount);
+window.addEventListener('DOMContentLoaded', () => {
+  mount().catch((error) => {
+    writePageDiagnostic(`Mount failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+});
