@@ -72,10 +72,19 @@ export async function launchElectronApp(electronRuntime) {
   if (typeof browserWindow.webContents?.on === 'function') {
     browserWindow.webContents.on('did-finish-load', async () => {
       writeDiagnostic('Renderer finished load.');
+      const initialHistory = loadSessionSummaries(process.cwd());
       await browserWindow.webContents.executeJavaScript(`window.voiceCli?.session?.configurePersistence?.({
-        loadHistory: () => ${JSON.stringify(loadSessionSummaries(process.cwd()))},
+        loadHistory: () => ${JSON.stringify(initialHistory)},
         persistHistory: (entry) => ({ filePath: 'main-process-backed', entry })
       });`);
+      if (process.env.VOICE_CLI_TEST_MODE === 'confirmation-persist') {
+        const persisted = persistSessionSummary(process.cwd(), {
+          adapter: 'codex',
+          exitCode: 0,
+          spokenSummary: 'Main-side persisted confirmation smoke entry.',
+        });
+        writeDiagnostic(`Main-side persisted session summary at ${persisted}`);
+      }
       if (process.env.VOICE_CLI_AUTO_EXIT === '1') {
         writeDiagnostic('Main process auto-exit requested after did-finish-load.');
         setTimeout(() => {
