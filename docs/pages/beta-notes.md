@@ -7,9 +7,12 @@ voice-cli now has a Linux-first Electron runtime, transcript persistence, bounde
 ## Before public beta
 
 The project still needs:
-- successful local packaged Linux builds
-- packaged-app launch validation
+- packaged-app launch validation on a Linux host with AppImage/FUSE support
 - onboarding validation in packaged apps
 - accessibility review
 - install documentation validation
 - session interaction polish
+
+## Current Linux packaging note
+
+A local AppImage build now succeeds, but direct launch validation depends on host AppImage/FUSE support. Missing `libfuse.so.2` is currently the known host-side blocker on some machines.

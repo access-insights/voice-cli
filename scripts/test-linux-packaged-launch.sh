@@ -7,4 +7,13 @@ if [[ -z "$APPIMAGE" ]]; then
   exit 1
 fi
 chmod +x "$APPIMAGE"
-VOICE_CLI_AUTO_EXIT=1 VOICE_CLI_AUTO_EXIT_DELAY_MS=1500 "$APPIMAGE" --no-sandbox
+set +e
+OUTPUT=$(VOICE_CLI_AUTO_EXIT=1 VOICE_CLI_AUTO_EXIT_DELAY_MS=1500 "$APPIMAGE" --no-sandbox 2>&1)
+STATUS=$?
+set -e
+printf '%s\n' "$OUTPUT"
+if [[ $STATUS -ne 0 && "$OUTPUT" == *"libfuse.so.2"* ]]; then
+  echo "PACKAGED_LAUNCH_BLOCKED_BY_HOST_FUSE" >&2
+  exit 2
+fi
+exit $STATUS
