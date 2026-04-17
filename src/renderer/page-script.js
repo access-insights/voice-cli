@@ -28,19 +28,75 @@ function renderStatusBadge(runtimeSummary) {
   return `<p><strong>Status:</strong> ${label}</p>`;
 }
 
-function renderEvents(events) {
-  if (!events.length) {
-    return '<p>No session events captured yet.</p>';
+function toTranscriptEntries(events) {
+  const entries = [];
+
+  for (const event of events) {
+    if (event.type === 'stream.chunk') {
+      const last = entries.at(-1);
+      if (last && last.kind === 'stream' && last.source === event.source) {
+        last.summary = `${last.summary}\n${event.summary || ''}`.trim();
+        last.raw = `${last.raw || ''}\n${event.raw || ''}`.trim();
+      } else {
+        entries.push({
+          kind: 'stream',
+          source: event.source || 'stdout',
+          summary: event.summary || 'No summary',
+          raw: event.raw || '',
+        });
+      }
+      continue;
+    }
+
+    if (event.type === 'prompt.detected' || event.type === 'error.detected') {
+      entries.push({
+        kind: event.type === 'prompt.detected' ? 'prompt' : 'error',
+        source: event.source || 'system',
+        summary: event.summary || 'No summary',
+        raw: event.raw || '',
+      });
+      continue;
+    }
+
+    if (event.type === 'session.started' || event.type === 'session.exited') {
+      entries.push({
+        kind: 'lifecycle',
+        source: 'system',
+        summary: event.summary || 'No summary',
+        raw: '',
+      });
+    }
+  }
+
+  return entries;
+}
+
+function renderTranscript(entries) {
+  if (!entries.length) {
+    return '<p>No transcript captured yet.</p>';
   }
 
   return `
     <ol>
-      ${events.map((event) => `
-        <li>
-          <strong>${escapeHtml(event.type)}</strong> | ${escapeHtml(event.summary || 'No summary')}
-          ${event.raw ? `<details><summary>Raw output</summary><pre>${escapeHtml(event.raw)}</pre></details>` : ''}
-        </li>
-      `).join('')}
+      ${entries.map((entry) => {
+        const label = entry.kind === 'prompt'
+          ? 'Prompt'
+          : entry.kind === 'error'
+            ? 'Error'
+            : entry.kind === 'lifecycle'
+              ? 'Lifecycle'
+              : entry.source === 'stderr'
+                ? 'stderr'
+                : 'stdout';
+
+        return `
+          <li>
+            <strong>${escapeHtml(label)}</strong>
+            <p>${escapeHtml(entry.summary)}</p>
+            ${entry.raw ? `<details><summary>Raw output</summary><pre>${escapeHtml(entry.raw)}</pre></details>` : ''}
+          </li>
+        `;
+      }).join('')}
     </ol>
   `;
 }
@@ -59,6 +115,8 @@ function renderShell(runtimeState, history) {
     </section>
   ` : '';
 
+  const transcriptEntries = toTranscriptEntries(Array.isArray(runtimeState.events) ? runtimeState.events : []);
+
   return `
     <section aria-labelledby="runtime-heading">
       <h2 id="runtime-heading">Runtime status</h2>
@@ -74,9 +132,9 @@ function renderShell(runtimeState, history) {
       </form>
     </section>
     ${confirmationSection}
-    <section aria-labelledby="events-heading">
-      <h2 id="events-heading">Session events</h2>
-      ${renderEvents(Array.isArray(runtimeState.events) ? runtimeState.events : [])}
+    <section aria-labelledby="transcript-heading">
+      <h2 id="transcript-heading">Transcript</h2>
+      ${renderTranscript(transcriptEntries)}
     </section>
     <section aria-labelledby="history-heading">
       <h2 id="history-heading">Session history</h2>
