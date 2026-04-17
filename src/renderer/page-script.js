@@ -113,11 +113,17 @@ async function mount() {
     }, 150);
   }
 
+  if (testMode === 'real-session') {
+    await window.voiceCli?.session?.start?.('Say hello briefly.');
+    await renderIntoTarget(target);
+    writePageDiagnostic('Test mode started real IPC-backed session flow.');
+  }
+
   if (window.voiceCli?.electron?.shouldAutoExit?.()) {
     writePageDiagnostic('Auto-exit requested.');
     setTimeout(() => {
       window.close();
-    }, testMode === 'confirmation' ? 1200 : 500);
+    }, testMode === 'confirmation' ? 1200 : 900);
   }
 }
 
