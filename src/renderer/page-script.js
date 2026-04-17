@@ -6,6 +6,28 @@ function writePageDiagnostic(message) {
   }
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function renderStatusBadge(runtimeSummary) {
+  const status = runtimeSummary?.status || 'ok';
+  const label = status === 'error'
+    ? 'Error'
+    : status === 'needs_confirmation'
+      ? 'Needs confirmation'
+      : status === 'running'
+        ? 'Running'
+        : 'Completed';
+
+  return `<p><strong>Status:</strong> ${label}</p>`;
+}
+
 function renderEvents(events) {
   if (!events.length) {
     return '<p>No session events captured yet.</p>';
@@ -13,7 +35,12 @@ function renderEvents(events) {
 
   return `
     <ol>
-      ${events.map((event) => `<li><strong>${event.type}</strong> | ${event.summary}${event.raw ? `<details><summary>Raw output</summary><pre>${event.raw}</pre></details>` : ''}</li>`).join('')}
+      ${events.map((event) => `
+        <li>
+          <strong>${escapeHtml(event.type)}</strong> | ${escapeHtml(event.summary || 'No summary')}
+          ${event.raw ? `<details><summary>Raw output</summary><pre>${escapeHtml(event.raw)}</pre></details>` : ''}
+        </li>
+      `).join('')}
     </ol>
   `;
 }
@@ -22,11 +49,11 @@ function renderShell(runtimeState, history) {
   const confirmationSection = runtimeState.confirmation ? `
     <section aria-labelledby="confirmation-heading">
       <h2 id="confirmation-heading">Confirmation required</h2>
-      <p><strong>Action:</strong> ${runtimeState.confirmation.actionLabel}</p>
-      <p><strong>Reason:</strong> ${runtimeState.confirmation.reason}</p>
+      <p><strong>Action:</strong> ${escapeHtml(runtimeState.confirmation.actionLabel)}</p>
+      <p><strong>Reason:</strong> ${escapeHtml(runtimeState.confirmation.reason)}</p>
       <form id="session-input-form">
         <label for="session-input-response">Response</label>
-        <input id="session-input-response" name="response" type="text" value="${runtimeState.controls.currentInputDraft || 'yes'}" />
+        <input id="session-input-response" name="response" type="text" value="${escapeHtml(runtimeState.controls.currentInputDraft || 'yes')}" />
         <button id="session-input-button" type="submit">Send response</button>
       </form>
     </section>
@@ -35,7 +62,8 @@ function renderShell(runtimeState, history) {
   return `
     <section aria-labelledby="runtime-heading">
       <h2 id="runtime-heading">Runtime status</h2>
-      <p>${runtimeState.runtimeSummary.headline}</p>
+      ${renderStatusBadge(runtimeState.runtimeSummary)}
+      <p>${escapeHtml(runtimeState.runtimeSummary.headline)}</p>
     </section>
     <section aria-labelledby="controls-heading">
       <h2 id="controls-heading">Session controls</h2>
@@ -53,7 +81,7 @@ function renderShell(runtimeState, history) {
     <section aria-labelledby="history-heading">
       <h2 id="history-heading">Session history</h2>
       <p>${history.length} recorded sessions.</p>
-      <ul>${history.map((item) => `<li>${item.fileName} | ${item.adapter} | exit ${item.exitCode} | ${item.spokenSummary}</li>`).join('')}</ul>
+      <ul>${history.map((item) => `<li>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | exit ${escapeHtml(item.exitCode)} | ${escapeHtml(item.spokenSummary)}</li>`).join('')}</ul>
     </section>
   `;
 }
