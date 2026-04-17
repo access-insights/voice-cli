@@ -31,6 +31,14 @@ const viewState = {
   mediaRecorder: null,
   mediaStream: null,
   recordedChunks: [],
+  onboarding: {
+    codexDetected: false,
+    codexPath: '',
+    codexHelpText: 'Run setup check to detect Codex CLI.',
+    projectPath: '',
+    projectValid: false,
+    projectHelpText: 'Enter a local project path to validate it.',
+  },
 };
 
 function getElapsedLabel() {
@@ -113,12 +121,14 @@ function renderRunSummary(runtimeState, history) {
   const exitCode = latest?.exitCode ?? 'n/a';
   const eventCount = events.length;
   const activePrompt = viewState.activePrompt || 'No active prompt';
+  const chosenWorkspace = viewState.onboarding?.projectPath || 'No project selected';
 
   return `
     <section aria-labelledby="run-summary-heading">
       <h2 id="run-summary-heading">Latest run</h2>
       <ul>
         <li><strong>Adapter:</strong> ${escapeHtml(adapter)}</li>
+        <li><strong>Workspace:</strong> ${escapeHtml(chosenWorkspace)}</li>
         <li><strong>Exit code:</strong> ${escapeHtml(exitCode)}</li>
         <li><strong>Events:</strong> ${escapeHtml(eventCount)}</li>
         <li><strong>Elapsed:</strong> ${escapeHtml(getElapsedLabel())}</li>
@@ -208,6 +218,56 @@ function renderHistory(history) {
   `;
 }
 
+function getSetupReadiness() {
+  const setup = viewState.onboarding || {};
+  if (!setup.codexDetected) {
+    return {
+      ready: false,
+      label: 'Setup incomplete',
+      message: 'Codex CLI is not detected yet. Run the setup check first.',
+    };
+  }
+  if (!setup.projectValid) {
+    return {
+      ready: false,
+      label: 'Setup incomplete',
+      message: 'Choose and validate a project workspace before relying on runs in the selected folder.',
+    };
+  }
+  return {
+    ready: true,
+    label: 'Setup ready',
+    message: 'Codex CLI is detected and a workspace is selected. You can start sessions with the chosen setup.',
+  };
+}
+
+function renderOnboardingPanel() {
+  const setup = viewState.onboarding || { codexDetected: false, codexPath: '', codexHelpText: 'Run setup check to detect Codex CLI.' };
+  const readiness = getSetupReadiness();
+  return `
+    <section aria-labelledby="onboarding-heading">
+      <h2 id="onboarding-heading">Setup and onboarding</h2>
+      <ul>
+        <li><strong>CLI detection:</strong> ${setup.codexDetected ? 'Codex detected' : 'Codex not detected'}</li>
+        <li><strong>CLI path:</strong> ${escapeHtml(setup.codexPath || 'Not detected yet')}</li>
+        <li><strong>Project path:</strong> ${escapeHtml(setup.projectPath || 'Not chosen yet')}</li>
+        <li><strong>Project validation:</strong> ${setup.projectValid ? 'Valid directory and selected workspace' : 'Not validated yet'}</li>
+        <li><strong>Voice test:</strong> Use the Voice section below to speak or transcribe audio.</li>
+        <li><strong>Safety review:</strong> Confirmation prompts stay explicit in the runtime panel.</li>
+      </ul>
+      <p><strong>${escapeHtml(readiness.label)}:</strong> ${escapeHtml(readiness.message)}</p>
+      <p>${escapeHtml(setup.codexHelpText)}</p>
+      <form id="onboarding-project-form">
+        <label for="onboarding-project-path">Project path</label>
+        <input id="onboarding-project-path" name="projectPath" type="text" value="${escapeHtml(setup.projectPath || '')}" placeholder="/path/to/project" />
+        <button type="submit" id="onboarding-validate-project-button">Validate project path</button>
+      </form>
+      <p>${escapeHtml(setup.projectHelpText || '')}</p>
+      <button type="button" id="onboarding-detect-codex-button">Check Codex CLI</button>
+    </section>
+  `;
+}
+
 function renderVoiceControls() {
   return `
     <section aria-labelledby="voice-heading">
@@ -246,6 +306,7 @@ function renderShell(runtimeState, history) {
   ` : '';
 
   const transcriptEntries = toTranscriptEntries(runtimeState);
+  const readiness = getSetupReadiness();
   const startButtonLabel = viewState.isStartingSession || viewState.isSessionRunning ? 'Running…' : 'Start session';
   const startDisabled = viewState.isStartingSession || viewState.isSessionRunning ? 'disabled' : '';
 
@@ -257,8 +318,10 @@ function renderShell(runtimeState, history) {
       <p>${escapeHtml(runtimeState.runtimeSummary.headline)}</p>
     </section>
     ${renderRunSummary(runtimeState, history)}
+    ${renderOnboardingPanel()}
     <section aria-labelledby="controls-heading">
       <h2 id="controls-heading">Session controls</h2>
+      <p><strong>Setup status:</strong> ${escapeHtml(readiness.message)}</p>
       <form id="session-start-form">
         <label for="session-start-prompt">Start prompt</label>
         <input id="session-start-prompt" name="prompt" type="text" value="${escapeHtml(viewState.draftPrompt || 'Summarize the current project state.')}" ${startDisabled} />
@@ -450,6 +513,51 @@ async function bindInteractions(target) {
     });
   }
 
+  const detectCodexButton = document.getElementById('onboarding-detect-codex-button');
+  if (detectCodexButton) {
+    detectCodexButton.addEventListener('click', async () => {
+      const result = await window.voiceCli?.onboarding?.detectCodexCli?.();
+      viewState.onboarding = {
+        ...viewState.onboarding,
+        codexDetected: Boolean(result?.detected),
+        codexPath: result?.binaryPath || '',
+        codexHelpText: result?.helpText || 'No setup result available.',
+      };
+      await window.voiceCli?.onboarding?.saveSettings?.({
+        preferredCli: 'codex',
+        onboardingCodexDetected: viewState.onboarding.codexDetected,
+        onboardingCodexPath: viewState.onboarding.codexPath,
+      });
+      await renderIntoTarget(target);
+      writePageDiagnostic(`Onboarding Codex detection result: ${viewState.onboarding.codexHelpText}`);
+    });
+  }
+
+  const projectForm = document.getElementById('onboarding-project-form');
+  const projectInput = document.getElementById('onboarding-project-path');
+  if (projectForm) {
+    projectForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const projectPath = projectInput && 'value' in projectInput && typeof projectInput.value === 'string' ? projectInput.value : '';
+      const result = await window.voiceCli?.onboarding?.validateProjectPath?.(projectPath);
+      viewState.onboarding = {
+        ...viewState.onboarding,
+        projectPath: result?.projectPath || projectPath,
+        projectValid: Boolean(result?.valid),
+        projectHelpText: result?.helpText || 'No project validation result available.',
+      };
+      if (viewState.onboarding.projectValid) {
+        viewState.lastVoiceMessage = `Selected workspace saved: ${viewState.onboarding.projectPath}`;
+      }
+      await window.voiceCli?.onboarding?.saveSettings?.({
+        onboardingProjectPath: viewState.onboarding.projectPath,
+        onboardingProjectValid: viewState.onboarding.projectValid,
+      });
+      await renderIntoTarget(target);
+      writePageDiagnostic(`Onboarding project validation result: ${viewState.onboarding.projectHelpText}`);
+    });
+  }
+
   const speakForm = document.getElementById('voice-speak-form');
   const speakInput = document.getElementById('voice-speak-text');
   if (speakForm) {
@@ -576,6 +684,32 @@ async function mount() {
   if (!target) {
     throw new Error('Missing #app mount target.');
   }
+
+  const savedSettings = await window.voiceCli?.onboarding?.loadSettings?.();
+  viewState.onboarding = {
+    ...viewState.onboarding,
+    projectPath: savedSettings?.onboardingProjectPath || '',
+    projectValid: Boolean(savedSettings?.onboardingProjectValid),
+    codexPath: savedSettings?.onboardingCodexPath || '',
+    codexDetected: Boolean(savedSettings?.onboardingCodexDetected),
+  };
+
+  const detectResult = await window.voiceCli?.onboarding?.detectCodexCli?.();
+  viewState.onboarding = {
+    ...viewState.onboarding,
+    codexDetected: Boolean(detectResult?.detected),
+    codexPath: detectResult?.binaryPath || viewState.onboarding.codexPath,
+    codexHelpText: detectResult?.helpText || 'Run setup check to detect Codex CLI.',
+    projectHelpText: viewState.onboarding.projectHelpText || 'Enter a local project path to validate it.',
+  };
+
+  await window.voiceCli?.onboarding?.saveSettings?.({
+    preferredCli: 'codex',
+    onboardingCodexDetected: viewState.onboarding.codexDetected,
+    onboardingCodexPath: viewState.onboarding.codexPath,
+    onboardingProjectPath: viewState.onboarding.projectPath,
+    onboardingProjectValid: viewState.onboarding.projectValid,
+  });
 
   await renderIntoTarget(target);
   writePageDiagnostic('Runtime shell rendered into #app.');

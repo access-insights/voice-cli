@@ -301,6 +301,12 @@ contextBridge.exposeInMainWorld('voiceCli', {
       mimeType: options.mimeType,
     }),
   },
+  onboarding: {
+    detectCodexCli: () => ipcRenderer.invoke('voice-cli:detect-codex-cli'),
+    validateProjectPath: (projectPath) => ipcRenderer.invoke('voice-cli:validate-project-path', { projectPath }),
+    loadSettings: () => ipcRenderer.invoke('voice-cli:load-settings'),
+    saveSettings: (settings) => ipcRenderer.invoke('voice-cli:save-settings', settings),
+  },
   electron: {
     getShellSummary: () => ({ appName: 'voice-cli', windowTitle: 'voice-cli', startRoute: '/' }),
     getConfig: () => ({ appId: 'ai.access-insights.voice-cli', windowTitle: 'voice-cli', rendererEntryHtml: 'website/app-shell.html', preloadEntry: 'src/electron/preload.js' }),

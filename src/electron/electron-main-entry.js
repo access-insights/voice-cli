@@ -6,6 +6,8 @@ import { respondToCodexPromptInMain, runCodexVerticalSliceInMain } from './main-
 import { speakTextInMain } from './main-voice.js';
 import { loadTranscriptionTextInMain, transcribeAudioInMain } from './main-transcription.js';
 import { persistCapturedAudioInMain } from './main-audio-capture.js';
+import { detectCodexCliInMain, validateProjectPathInMain } from './main-onboarding.js';
+import { loadElectronSettings, saveElectronSettings } from './main-settings.js';
 
 function createDesktopWindowSpec() {
   return {
@@ -33,6 +35,14 @@ function getDiagnosticsPath(projectPath = process.cwd()) {
 
 function writeDiagnostic(message, projectPath = process.cwd()) {
   appendFileSync(getDiagnosticsPath(projectPath), `${new Date().toISOString()} ${message}\n`);
+}
+
+function getSelectedWorkspacePath() {
+  const settings = loadElectronSettings(process.cwd());
+  if (settings.onboardingProjectValid && settings.onboardingProjectPath) {
+    return settings.onboardingProjectPath;
+  }
+  return process.cwd();
 }
 
 export function createRealElectronLaunchSpec(projectPath = process.cwd()) {
@@ -125,15 +135,16 @@ if (process.versions.electron) {
     return { filePath };
   });
   electronModule.ipcMain.handle('voice-cli:start-session', (event, prompt) => {
+    const projectPath = getSelectedWorkspacePath();
     const result = runCodexVerticalSliceInMain({
-      projectPath: process.cwd(),
+      projectPath,
       prompt,
       onEvent: (sessionEvent) => {
         event.sender.send('voice-cli:session-event', { event: sessionEvent });
       },
     });
     const filePath = persistSessionRecord(process.cwd(), result);
-    writeDiagnostic(`IPC started real session and persisted record at ${filePath}`);
+    writeDiagnostic(`IPC started real session in ${projectPath} and persisted record at ${filePath}`);
     return result;
   });
   electronModule.ipcMain.handle('voice-cli:respond-session', (event, input) => {
@@ -175,6 +186,26 @@ if (process.versions.electron) {
       mimeType: payload?.mimeType,
     });
     writeDiagnostic(`IPC persist-captured-audio result: ${JSON.stringify({ ok: result.ok, filePath: result.filePath ?? null, reason: result.reason ?? null })}`);
+    return result;
+  });
+  electronModule.ipcMain.handle('voice-cli:detect-codex-cli', () => {
+    const result = detectCodexCliInMain();
+    writeDiagnostic(`IPC detect-codex-cli result: ${JSON.stringify({ detected: result.detected, binaryPath: result.binaryPath ?? '' })}`);
+    return result;
+  });
+  electronModule.ipcMain.handle('voice-cli:validate-project-path', (_event, payload) => {
+    const result = validateProjectPathInMain(payload?.projectPath);
+    writeDiagnostic(`IPC validate-project-path result: ${JSON.stringify({ valid: result.valid, projectPath: result.projectPath ?? '' })}`);
+    return result;
+  });
+  electronModule.ipcMain.handle('voice-cli:load-settings', () => {
+    const result = loadElectronSettings(process.cwd());
+    writeDiagnostic('IPC load-settings result returned.');
+    return result;
+  });
+  electronModule.ipcMain.handle('voice-cli:save-settings', (_event, payload) => {
+    const result = saveElectronSettings(payload || {}, process.cwd());
+    writeDiagnostic('IPC save-settings result returned.');
     return result;
   });
   launchElectronApp({

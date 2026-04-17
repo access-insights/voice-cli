@@ -4,6 +4,10 @@ export interface AppSettings {
   speechRate: number;
   transcriptMode: 'summary-first' | 'verbatim-first';
   requireRiskConfirmation: boolean;
+  onboardingProjectPath: string;
+  onboardingProjectValid: boolean;
+  onboardingCodexPath: string;
+  onboardingCodexDetected: boolean;
 }
 
 export function defaultSettings(): AppSettings {
@@ -13,5 +17,9 @@ export function defaultSettings(): AppSettings {
     speechRate: 1.2,
     transcriptMode: 'summary-first',
     requireRiskConfirmation: true,
+    onboardingProjectPath: '',
+    onboardingProjectValid: false,
+    onboardingCodexPath: '',
+    onboardingCodexDetected: false,
   };
 }
