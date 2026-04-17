@@ -6,6 +6,18 @@ function writePageDiagnostic(message) {
   }
 }
 
+function renderEvents(events) {
+  if (!events.length) {
+    return '<p>No session events captured yet.</p>';
+  }
+
+  return `
+    <ol>
+      ${events.map((event) => `<li><strong>${event.type}</strong> | ${event.summary}${event.raw ? `<details><summary>Raw output</summary><pre>${event.raw}</pre></details>` : ''}</li>`).join('')}
+    </ol>
+  `;
+}
+
 function renderShell(runtimeState, history) {
   const confirmationSection = runtimeState.confirmation ? `
     <section aria-labelledby="confirmation-heading">
@@ -34,6 +46,10 @@ function renderShell(runtimeState, history) {
       </form>
     </section>
     ${confirmationSection}
+    <section aria-labelledby="events-heading">
+      <h2 id="events-heading">Session events</h2>
+      ${renderEvents(Array.isArray(runtimeState.events) ? runtimeState.events : [])}
+    </section>
     <section aria-labelledby="history-heading">
       <h2 id="history-heading">Session history</h2>
       <p>${history.length} recorded sessions.</p>
@@ -79,6 +95,7 @@ async function renderIntoTarget(target) {
     runtimeSummary: { status: 'ok', headline: 'Electron runtime ready.' },
     confirmation: null,
     controls: { canStartSession: true, canSendInput: false, currentInputDraft: '' },
+    events: [],
   };
   const historyResult = await window.voiceCli?.session?.getHistory?.();
   const history = Array.isArray(historyResult) ? historyResult : [];

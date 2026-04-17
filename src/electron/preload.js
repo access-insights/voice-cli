@@ -148,6 +148,7 @@ function createRuntimeBridge() {
         runtimeSummary,
         confirmation,
         controls,
+        events: [...events],
       };
     },
     onEvent(listener) {
