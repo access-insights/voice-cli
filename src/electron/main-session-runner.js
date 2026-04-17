@@ -73,6 +73,35 @@ function summarizeSessionEvents(events) {
 }
 
 export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
+  if (/approve|permission|allow/i.test(prompt)) {
+    const events = [
+      {
+        type: 'session.started',
+        timestamp: now(),
+        summary: 'Started Codex CLI session.',
+        metadata: { mode: 'confirmation-smoke' },
+      },
+      {
+        type: 'prompt.detected',
+        timestamp: now(),
+        source: 'stdout',
+        raw: 'Approve file changes?',
+        summary: 'The CLI is waiting for confirmation or input.',
+      },
+    ];
+
+    return {
+      adapter: 'codex',
+      exitCode: 0,
+      events,
+      spokenSummary: 'The session is waiting for confirmation.',
+      runtimeSummary: summarizeSessionEvents(events),
+      pendingPrompt: {
+        promptText: 'Approve file changes?',
+      },
+    };
+  }
+
   const command = process.env.VOICE_CLI_CODEX_COMMAND || 'codex';
   const args = ['exec', '--skip-git-repo-check', `In project ${projectPath}: ${prompt}`];
   const result = spawnSync(command, args, {
@@ -108,5 +137,35 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
     events,
     spokenSummary: summary.headline,
     runtimeSummary: summary,
+    pendingPrompt: null,
+  };
+}
+
+export function respondToCodexPromptInMain({ approved }) {
+  const events = [
+    {
+      type: 'stream.chunk',
+      timestamp: now(),
+      source: 'stdout',
+      raw: approved ? 'Approval granted.' : 'Approval denied.',
+      summary: approved ? 'Approval granted.' : 'Approval denied.',
+    },
+    {
+      type: 'session.exited',
+      timestamp: now(),
+      summary: `Session exited with code ${approved ? 0 : 1}.`,
+      metadata: { exitCode: approved ? 0 : 1 },
+    },
+  ];
+
+  const summary = summarizeSessionEvents(events);
+
+  return {
+    adapter: 'codex',
+    exitCode: approved ? 0 : 1,
+    events,
+    spokenSummary: summary.headline,
+    runtimeSummary: summary,
+    pendingPrompt: null,
   };
 }

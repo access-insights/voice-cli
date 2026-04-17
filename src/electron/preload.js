@@ -73,14 +73,6 @@ function createStreamEvent(source, chunk) {
   };
 }
 
-function buildPromptResponse(request, approved) {
-  return {
-    confirmationId: request.id,
-    approved,
-    responseText: approved ? 'yes\n' : 'no\n',
-  };
-}
-
 function createRuntimeBridge() {
   const events = [];
   const eventListeners = [];
@@ -100,6 +92,14 @@ function createRuntimeBridge() {
     for (const listener of eventListeners) listener(event);
   }
 
+  function replaceEvents(nextEvents) {
+    events.length = 0;
+    for (const event of nextEvents) {
+      emit(event);
+    }
+    runtimeSummary = summarizeRuntimeHealth(events);
+  }
+
   return {
     async start(prompt) {
       if (process.env.VOICE_CLI_TEST_MODE === 'confirmation') {
@@ -117,28 +117,21 @@ function createRuntimeBridge() {
       }
 
       const result = await ipcRenderer.invoke('voice-cli:start-session', prompt);
-      const nextEvents = Array.isArray(result?.events) ? result.events : [];
-      events.length = 0;
-      for (const event of nextEvents) {
-        emit(event);
-      }
+      replaceEvents(Array.isArray(result?.events) ? result.events : []);
       runtimeSummary = result?.runtimeSummary ?? summarizeRuntimeHealth(events);
       return { accepted: true, prompt, runtimeSummary };
     },
-    sendInput(input) {
+    async sendInput(input) {
       if (!confirmation) {
         return { accepted: true, echoedInput: input };
       }
-      const approved = /^y(es)?$/i.test(String(input).trim());
-      const response = buildPromptResponse(confirmation, approved);
-      confirmation = null;
-      controls = {
-        canStartSession: true,
-        canSendInput: false,
-        currentInputDraft: response.responseText.trim(),
-      };
-      emit(createStreamEvent('stdout', approved ? 'Approval granted.' : 'Approval denied.'));
-      return { accepted: true, echoedInput: response.responseText };
+
+      const result = await ipcRenderer.invoke('voice-cli:respond-session', input);
+      const existingEvents = [...events].filter((event) => event.type !== 'prompt.detected');
+      const nextEvents = [...existingEvents, ...(Array.isArray(result?.events) ? result.events : [])];
+      replaceEvents(nextEvents);
+      runtimeSummary = result?.runtimeSummary ?? summarizeRuntimeHealth(events);
+      return { accepted: true, echoedInput: input, runtimeSummary };
     },
     getHistory() {
       return ipcRenderer.invoke('voice-cli:load-history');

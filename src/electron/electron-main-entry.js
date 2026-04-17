@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { loadSessionSummaries, persistSessionSummary } from './main-session-storage.js';
-import { runCodexVerticalSliceInMain } from './main-session-runner.js';
+import { respondToCodexPromptInMain, runCodexVerticalSliceInMain } from './main-session-runner.js';
 
 function createDesktopWindowSpec() {
   return {
@@ -128,6 +128,17 @@ if (process.versions.electron) {
       spokenSummary: result.spokenSummary,
     });
     writeDiagnostic(`IPC started real session and persisted summary at ${filePath}`);
+    return result;
+  });
+  electronModule.ipcMain.handle('voice-cli:respond-session', (_event, input) => {
+    const approved = /^y(es)?$/i.test(String(input).trim());
+    const result = respondToCodexPromptInMain({ approved });
+    const filePath = persistSessionSummary(process.cwd(), {
+      adapter: result.adapter,
+      exitCode: result.exitCode,
+      spokenSummary: result.spokenSummary,
+    });
+    writeDiagnostic(`IPC responded to session prompt and persisted summary at ${filePath}`);
     return result;
   });
   launchElectronApp({
