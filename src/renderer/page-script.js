@@ -19,12 +19,30 @@ const viewState = {
   isStartingSession: false,
   activePrompt: '',
   runStartedAt: 0,
+  timingIntervalId: null,
+  lastOutcome: 'idle',
 };
 
 function getElapsedLabel() {
   if (!viewState.runStartedAt) return 'Not running';
   const elapsedMs = Math.max(0, Date.now() - viewState.runStartedAt);
   return `${(elapsedMs / 1000).toFixed(1)}s`;
+}
+
+function renderBanner(runtimeSummary) {
+  if (viewState.isStartingSession) {
+    return '<p><strong>Starting session...</strong> The shell is waiting for the CLI run to return.</p>';
+  }
+
+  if (runtimeSummary?.status === 'error') {
+    return '<p><strong>Session error.</strong> Review the transcript for stderr and raw output.</p>';
+  }
+
+  if (viewState.lastOutcome === 'completed') {
+    return '<p><strong>Session completed.</strong> Latest results are shown below.</p>';
+  }
+
+  return '<p><strong>Ready.</strong> Start a session to view transcript output here.</p>';
 }
 
 function renderStatusBadge(runtimeSummary) {
@@ -164,6 +182,7 @@ function renderShell(runtimeState, history) {
   return `
     <section aria-labelledby="runtime-heading">
       <h2 id="runtime-heading">Runtime status</h2>
+      ${renderBanner(runtimeState.runtimeSummary)}
       ${renderStatusBadge(runtimeState.runtimeSummary)}
       <p>${escapeHtml(runtimeState.runtimeSummary.headline)}</p>
     </section>
@@ -189,6 +208,24 @@ function renderShell(runtimeState, history) {
   `;
 }
 
+function stopTimingRefresh() {
+  if (viewState.timingIntervalId) {
+    clearInterval(viewState.timingIntervalId);
+    viewState.timingIntervalId = null;
+  }
+}
+
+function startTimingRefresh(target) {
+  stopTimingRefresh();
+  viewState.timingIntervalId = setInterval(() => {
+    if (!viewState.isStartingSession) {
+      stopTimingRefresh();
+      return;
+    }
+    renderIntoTarget(target).catch(() => {});
+  }, 250);
+}
+
 async function bindInteractions(target) {
   const form = document.getElementById('session-start-form');
   const promptInput = document.getElementById('session-start-prompt');
@@ -202,12 +239,19 @@ async function bindInteractions(target) {
       viewState.isStartingSession = true;
       viewState.activePrompt = prompt;
       viewState.runStartedAt = Date.now();
+      viewState.lastOutcome = 'running';
+      startTimingRefresh(target);
       await renderIntoTarget(target);
       writePageDiagnostic(`Submitting prompt: ${prompt}`);
       try {
         await window.voiceCli?.session?.start?.(prompt);
+        viewState.lastOutcome = 'completed';
+      } catch (error) {
+        viewState.lastOutcome = 'error';
+        throw error;
       } finally {
         viewState.isStartingSession = false;
+        stopTimingRefresh();
         await renderIntoTarget(target);
       }
       writePageDiagnostic('Runtime shell rerendered after start.');
@@ -276,9 +320,13 @@ async function mount() {
     viewState.isStartingSession = true;
     viewState.activePrompt = 'Say hello briefly.';
     viewState.runStartedAt = Date.now();
+    viewState.lastOutcome = 'running';
+    startTimingRefresh(target);
     await renderIntoTarget(target);
     await window.voiceCli?.session?.start?.('Say hello briefly.');
     viewState.isStartingSession = false;
+    viewState.lastOutcome = 'completed';
+    stopTimingRefresh();
     await renderIntoTarget(target);
     writePageDiagnostic('Test mode started real IPC-backed session flow.');
   }
@@ -286,6 +334,7 @@ async function mount() {
   if (window.voiceCli?.electron?.shouldAutoExit?.()) {
     writePageDiagnostic('Auto-exit requested.');
     setTimeout(() => {
+      stopTimingRefresh();
       window.close();
     }, testMode === 'confirmation' ? 1200 : 900);
   }
