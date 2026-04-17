@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Voice-first desktop wrapper for agentic CLI tools",
+  "author": "Access Insights",
   "license": "MIT",
   "type": "module",
   "main": "src/electron/electron-main-entry.js",
@@ -19,10 +20,32 @@
     "slice": "bash ./scripts/run-vertical-slice.sh",
     "slice:pty": "bash ./scripts/run-node-pty-placeholder.sh",
     "check:release": "bash ./scripts/check-release-foundations.sh",
+    "dist:linux": "electron-builder --linux AppImage --publish never",
     "pages:build": "mkdir -p .site && cp website/index.html .site/index.html"
   },
+  "build": {
+    "appId": "ai.access-insights.voice-cli",
+    "productName": "voice-cli",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "website/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
+  },
   "dependencies": {
-    "electron": "^35.0.0",
     "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^24.13.3"
   }
 }
