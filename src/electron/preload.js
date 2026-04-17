@@ -102,16 +102,27 @@ function createRuntimeBridge() {
 
   return {
     async start(prompt) {
-      emit(createStreamEvent('stdout', `Started session for prompt: ${prompt}`));
-      if (/approve|permission|allow/i.test(prompt)) {
-        emit(createStreamEvent('stdout', 'Approve file changes?'));
+      if (process.env.VOICE_CLI_TEST_MODE === 'confirmation') {
+        emit(createStreamEvent('stdout', `Started session for prompt: ${prompt}`));
+        if (/approve|permission|allow/i.test(prompt)) {
+          emit(createStreamEvent('stdout', 'Approve file changes?'));
+        }
+        const entry = {
+          adapter: 'codex',
+          exitCode: 0,
+          spokenSummary: runtimeSummary.headline,
+        };
+        await ipcRenderer.invoke('voice-cli:persist-history', entry);
+        return { accepted: true, prompt, runtimeSummary };
       }
-      const entry = {
-        adapter: 'codex',
-        exitCode: 0,
-        spokenSummary: runtimeSummary.headline,
-      };
-      await ipcRenderer.invoke('voice-cli:persist-history', entry);
+
+      const result = await ipcRenderer.invoke('voice-cli:start-session', prompt);
+      const nextEvents = Array.isArray(result?.events) ? result.events : [];
+      events.length = 0;
+      for (const event of nextEvents) {
+        emit(event);
+      }
+      runtimeSummary = result?.runtimeSummary ?? summarizeRuntimeHealth(events);
       return { accepted: true, prompt, runtimeSummary };
     },
     sendInput(input) {
