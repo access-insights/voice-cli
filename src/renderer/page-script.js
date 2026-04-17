@@ -27,6 +27,7 @@ const viewState = {
   selectedRecord: null,
   lastSpokenText: '',
   lastVoiceMessage: '',
+  liveMessage: '',
   isRecordingVoice: false,
   mediaRecorder: null,
   mediaStream: null,
@@ -40,6 +41,17 @@ const viewState = {
     projectHelpText: 'Enter a local project path to validate it.',
   },
 };
+
+function setLiveMessage(message) {
+  viewState.liveMessage = String(message || '').trim();
+}
+
+function focusElementById(id) {
+  const element = document.getElementById(id);
+  if (element && typeof element.focus === 'function') {
+    element.focus();
+  }
+}
 
 function getElapsedLabel() {
   if (!viewState.runStartedAt) return 'Not running';
@@ -146,7 +158,7 @@ function renderTranscript(entries) {
 
   return `
     <ol>
-      ${entries.map((entry) => {
+      ${entries.map((entry, index) => {
         const label = entry.kind === 'prompt'
           ? 'Prompt'
           : entry.kind === 'error'
@@ -156,17 +168,23 @@ function renderTranscript(entries) {
               : entry.kind === 'user'
                 ? 'User'
                 : entry.kind === 'assistant'
-                  ? 'Assistant'
-                  : 'Tool';
+                  ? 'Assistant summary'
+                  : 'Tool output';
+
+        const summaryId = `transcript-summary-${index}`;
+        const rawId = `transcript-raw-${index}`;
+        const rawSection = entry.raw && entry.raw !== entry.summary
+          ? `<details><summary aria-controls="${rawId}">Raw output details</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
+          : '';
 
         const content = `
           <strong>${escapeHtml(label)}</strong>
-          <p>${escapeHtml(entry.summary)}</p>
-          ${entry.raw && entry.raw !== entry.summary ? `<details><summary>Raw output</summary><pre>${escapeHtml(entry.raw)}</pre></details>` : ''}
+          <p id="${summaryId}">${escapeHtml(entry.summary)}</p>
+          ${rawSection}
         `;
 
         if (entry.kind === 'lifecycle') {
-          return `<li><details><summary>${escapeHtml(label)} event</summary>${content}</details></li>`;
+          return `<li><details><summary aria-describedby="${summaryId}">${escapeHtml(label)} event</summary>${content}</details></li>`;
         }
 
         return `<li>${content}</li>`;
@@ -255,15 +273,15 @@ function renderOnboardingPanel() {
         <li><strong>Voice test:</strong> Use the Voice section below to speak or transcribe audio.</li>
         <li><strong>Safety review:</strong> Confirmation prompts stay explicit in the runtime panel.</li>
       </ul>
-      <p><strong>${escapeHtml(readiness.label)}:</strong> ${escapeHtml(readiness.message)}</p>
-      <p>${escapeHtml(setup.codexHelpText)}</p>
-      <form id="onboarding-project-form">
+      <p id="setup-readiness-message"><strong>${escapeHtml(readiness.label)}:</strong> ${escapeHtml(readiness.message)}</p>
+      <p id="onboarding-codex-help">${escapeHtml(setup.codexHelpText)}</p>
+      <form id="onboarding-project-form" aria-describedby="setup-readiness-message onboarding-project-help">
         <label for="onboarding-project-path">Project path</label>
-        <input id="onboarding-project-path" name="projectPath" type="text" value="${escapeHtml(setup.projectPath || '')}" placeholder="/path/to/project" />
+        <input id="onboarding-project-path" name="projectPath" type="text" value="${escapeHtml(setup.projectPath || '')}" placeholder="/path/to/project" autocomplete="off" spellcheck="false" />
         <button type="submit" id="onboarding-validate-project-button">Validate project path</button>
       </form>
-      <p>${escapeHtml(setup.projectHelpText || '')}</p>
-      <button type="button" id="onboarding-detect-codex-button">Check Codex CLI</button>
+      <p id="onboarding-project-help">${escapeHtml(setup.projectHelpText || '')}</p>
+      <button type="button" id="onboarding-detect-codex-button" aria-describedby="onboarding-codex-help">Check Codex CLI</button>
     </section>
   `;
 }
@@ -277,16 +295,16 @@ function renderVoiceControls() {
         <input id="voice-speak-text" name="text" type="text" value="Voice CLI is ready." />
         <button id="voice-speak-button" type="submit">Speak</button>
       </form>
-      <form id="voice-transcribe-form">
+      <form id="voice-transcribe-form" aria-describedby="voice-status-message">
         <label for="voice-transcribe-path">Transcribe audio file</label>
-        <input id="voice-transcribe-path" name="audioPath" type="text" placeholder="/path/to/audio.m4a" />
+        <input id="voice-transcribe-path" name="audioPath" type="text" placeholder="/path/to/audio.m4a" autocomplete="off" spellcheck="false" />
         <button id="voice-transcribe-button" type="submit">Transcribe with Whisper</button>
       </form>
       <div>
-        <button type="button" id="voice-record-button">${viewState.isRecordingVoice ? 'Stop recording and transcribe' : 'Record and transcribe'}</button>
+        <button type="button" id="voice-record-button" aria-pressed="${viewState.isRecordingVoice ? 'true' : 'false'}">${viewState.isRecordingVoice ? 'Stop recording and transcribe' : 'Record and transcribe'}</button>
         <button type="button" id="voice-start-from-transcript-button" ${viewState.isStartingSession || viewState.isSessionRunning || !String(viewState.draftPrompt || '').trim() ? 'disabled' : ''}>Start session from transcribed prompt</button>
       </div>
-      ${viewState.lastVoiceMessage ? `<p><strong>Voice status:</strong> ${escapeHtml(viewState.lastVoiceMessage)}</p>` : ''}
+      ${viewState.lastVoiceMessage ? `<p id="voice-status-message"><strong>Voice status:</strong> ${escapeHtml(viewState.lastVoiceMessage)}</p>` : '<p id="voice-status-message"><strong>Voice status:</strong> No voice action yet.</p>'}
     </section>
   `;
 }
@@ -312,7 +330,8 @@ function renderShell(runtimeState, history) {
 
   return `
     <section aria-labelledby="runtime-heading">
-      <h2 id="runtime-heading">Runtime status</h2>
+      <h2 id="runtime-heading" tabindex="-1">Runtime status</h2>
+      <div id="app-live-region" role="status" aria-live="polite" aria-atomic="true">${escapeHtml(viewState.liveMessage || 'App ready.')}</div>
       ${renderBanner(runtimeState.runtimeSummary)}
       ${renderStatusBadge(runtimeState.runtimeSummary)}
       <p>${escapeHtml(runtimeState.runtimeSummary.headline)}</p>
@@ -322,11 +341,12 @@ function renderShell(runtimeState, history) {
     <section aria-labelledby="controls-heading">
       <h2 id="controls-heading">Session controls</h2>
       <p><strong>Setup status:</strong> ${escapeHtml(readiness.message)}</p>
-      <form id="session-start-form">
+      <form id="session-start-form" aria-describedby="session-controls-help">
         <label for="session-start-prompt">Start prompt</label>
         <input id="session-start-prompt" name="prompt" type="text" value="${escapeHtml(viewState.draftPrompt || 'Summarize the current project state.')}" ${startDisabled} />
         <button id="session-start-button" type="submit" ${startDisabled}>${startButtonLabel}</button>
       </form>
+      <p id="session-controls-help">Prompt input starts a CLI session in the selected workspace. Transcript details appear below.</p>
     </section>
     ${confirmationSection}
     ${renderVoiceControls()}
@@ -442,15 +462,19 @@ async function startSessionFromPrompt(target, prompt) {
   viewState.activePrompt = normalizedPrompt;
   viewState.runStartedAt = Date.now();
   viewState.lastOutcome = 'running';
+  setLiveMessage('Starting session. Runtime updates will appear below.');
   startTimingRefresh(target);
   await renderIntoTarget(target);
+  focusElementById('runtime-heading');
   writePageDiagnostic(`Submitting prompt: ${normalizedPrompt}`);
   try {
     await window.voiceCli?.session?.start?.(normalizedPrompt);
     viewState.lastOutcome = 'completed';
+    setLiveMessage('Session completed. Latest transcript and saved run details are available.');
     await maybeAutoSelectLatestHistory();
   } catch (error) {
     viewState.lastOutcome = 'error';
+    setLiveMessage(`Session failed. ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   } finally {
     viewState.isStartingSession = false;
@@ -486,8 +510,10 @@ async function bindInteractions(target) {
       await window.voiceCli?.session?.sendInput?.(response);
       viewState.lastOutcome = 'completed';
       viewState.isSessionRunning = false;
+      setLiveMessage(`Confirmation response sent: ${response}.`);
       await maybeAutoSelectLatestHistory();
       await renderIntoTarget(target);
+      focusElementById('runtime-heading');
       writePageDiagnostic('Runtime shell rerendered after input response.');
     });
   }
@@ -498,7 +524,9 @@ async function bindInteractions(target) {
       if (!fileName) return;
       viewState.selectedHistoryFile = fileName;
       viewState.selectedRecord = await window.voiceCli?.session?.getSessionRecord?.(fileName);
+      setLiveMessage(`Loaded saved session record ${fileName}.`);
       await renderIntoTarget(target);
+      focusElementById('saved-run-heading');
       writePageDiagnostic(`Loaded saved session record: ${fileName}`);
     });
   });
@@ -508,7 +536,9 @@ async function bindInteractions(target) {
     clearButton.addEventListener('click', async () => {
       viewState.selectedHistoryFile = '';
       viewState.selectedRecord = null;
+      setLiveMessage('Returned to live runtime view.');
       await renderIntoTarget(target);
+      focusElementById('runtime-heading');
       writePageDiagnostic('Returned to live-only view.');
     });
   }
@@ -528,7 +558,9 @@ async function bindInteractions(target) {
         onboardingCodexDetected: viewState.onboarding.codexDetected,
         onboardingCodexPath: viewState.onboarding.codexPath,
       });
+      setLiveMessage(viewState.onboarding.codexHelpText);
       await renderIntoTarget(target);
+      focusElementById('onboarding-heading');
       writePageDiagnostic(`Onboarding Codex detection result: ${viewState.onboarding.codexHelpText}`);
     });
   }
@@ -548,12 +580,16 @@ async function bindInteractions(target) {
       };
       if (viewState.onboarding.projectValid) {
         viewState.lastVoiceMessage = `Selected workspace saved: ${viewState.onboarding.projectPath}`;
+        setLiveMessage(`Workspace validated and saved: ${viewState.onboarding.projectPath}`);
+      } else {
+        setLiveMessage(viewState.onboarding.projectHelpText || 'Project validation did not succeed.');
       }
       await window.voiceCli?.onboarding?.saveSettings?.({
         onboardingProjectPath: viewState.onboarding.projectPath,
         onboardingProjectValid: viewState.onboarding.projectValid,
       });
       await renderIntoTarget(target);
+      focusElementById('onboarding-project-path');
       writePageDiagnostic(`Onboarding project validation result: ${viewState.onboarding.projectHelpText}`);
     });
   }
@@ -566,6 +602,7 @@ async function bindInteractions(target) {
       const text = speakInput && 'value' in speakInput && typeof speakInput.value === 'string' ? speakInput.value : '';
       const result = await window.voiceCli?.voice?.speakText?.(text, { rate: 1.0 });
       viewState.lastVoiceMessage = result?.ok ? `Spoken via ${result.backend || 'tts backend'}.` : `Speak failed: ${result?.reason || 'unknown error'}`;
+      setLiveMessage(viewState.lastVoiceMessage);
       await renderIntoTarget(target);
       writePageDiagnostic(`Voice speak result: ${viewState.lastVoiceMessage}`);
     });
@@ -589,7 +626,9 @@ async function bindInteractions(target) {
       } else {
         viewState.lastVoiceMessage = `Transcription failed: ${result?.reason || 'unknown error'}`;
       }
+      setLiveMessage(viewState.lastVoiceMessage);
       await renderIntoTarget(target);
+      focusElementById('session-start-prompt');
       writePageDiagnostic(`Voice transcription result: ${viewState.lastVoiceMessage}`);
     });
   }
@@ -606,6 +645,7 @@ async function bindInteractions(target) {
           viewState.recordedChunks = [];
           viewState.isRecordingVoice = true;
           viewState.lastVoiceMessage = 'Recording audio now.';
+          setLiveMessage(viewState.lastVoiceMessage);
 
           mediaRecorder.addEventListener('dataavailable', (event) => {
             if (event.data && event.data.size > 0) {
@@ -627,6 +667,7 @@ async function bindInteractions(target) {
         } catch (error) {
           stopVoiceStream();
           viewState.lastVoiceMessage = `Microphone start failed: ${error instanceof Error ? error.message : String(error)}`;
+          setLiveMessage(viewState.lastVoiceMessage);
           await renderIntoTarget(target);
           writePageDiagnostic(`Voice recording start failed: ${viewState.lastVoiceMessage}`);
         }
@@ -635,12 +676,14 @@ async function bindInteractions(target) {
 
       try {
         viewState.lastVoiceMessage = 'Stopping recording and transcribing audio.';
+        setLiveMessage(viewState.lastVoiceMessage);
         await renderIntoTarget(target);
         viewState.mediaRecorder?.stop();
         writePageDiagnostic('Voice recording stopped for transcription.');
       } catch (error) {
         stopVoiceStream();
         viewState.lastVoiceMessage = `Microphone stop failed: ${error instanceof Error ? error.message : String(error)}`;
+        setLiveMessage(viewState.lastVoiceMessage);
         await renderIntoTarget(target);
         writePageDiagnostic(`Voice recording stop failed: ${viewState.lastVoiceMessage}`);
       }
@@ -653,10 +696,12 @@ async function bindInteractions(target) {
       const prompt = String(viewState.draftPrompt || '').trim();
       if (!prompt) {
         viewState.lastVoiceMessage = 'No transcribed prompt is available to start yet.';
+        setLiveMessage(viewState.lastVoiceMessage);
         await renderIntoTarget(target);
         return;
       }
       viewState.lastVoiceMessage = 'Starting session from the current transcribed prompt.';
+      setLiveMessage(viewState.lastVoiceMessage);
       await renderIntoTarget(target);
       await startSessionFromPrompt(target, prompt);
     });
