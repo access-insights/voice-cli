@@ -12,10 +12,38 @@ function summarizeChunk(raw) {
   return raw.length > 160 ? `${raw.slice(0, 157)}...` : raw;
 }
 
-function createStreamEvent(source, chunk) {
+function shouldTreatAsFatalError(source, raw, exitCode) {
+  const text = String(raw).trim();
+  if (!text) return false;
+  if (source !== 'stderr') return /failed|exception/i.test(text);
+  if (exitCode && exitCode !== 0) return /error|failed|exception/i.test(text);
+
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  const meaningfulLines = lines.filter((line) => {
+    if (/^warning:/i.test(line)) return false;
+    if (/^OpenAI Codex v/i.test(line)) return false;
+    if (/^workdir:/i.test(line)) return false;
+    if (/^model:/i.test(line)) return false;
+    if (/^provider:/i.test(line)) return false;
+    if (/^approval:/i.test(line)) return false;
+    if (/^sandbox:/i.test(line)) return false;
+    if (/^reasoning effort:/i.test(line)) return false;
+    if (/^reasoning summaries:/i.test(line)) return false;
+    if (/^session id:/i.test(line)) return false;
+    if (/^tokens used/i.test(line)) return false;
+    if (/^Reading additional input from stdin/i.test(line)) return false;
+    if (/^-{4,}$/.test(line)) return false;
+    return true;
+  });
+
+  const fatalLines = meaningfulLines.filter((line) => /failed|exception|fatal:/i.test(line));
+  return fatalLines.length > 0;
+}
+
+function createStreamEvent(source, chunk, exitCode = 0) {
   const raw = String(chunk).trim();
 
-  if (/error|failed|exception/i.test(raw)) {
+  if (shouldTreatAsFatalError(source, raw, exitCode)) {
     return {
       type: 'error.detected',
       timestamp: now(),
@@ -44,12 +72,12 @@ function createStreamEvent(source, chunk) {
   };
 }
 
-function summarizeSessionEvents(events) {
+function summarizeSessionEvents(events, exitCode = 0) {
   const last = events.at(-1);
   const hasError = events.some((event) => event.type === 'error.detected');
   const hasPrompt = events.some((event) => event.type === 'prompt.detected');
 
-  if (hasError) {
+  if (hasError || (exitCode && exitCode !== 0)) {
     return {
       status: 'failed',
       headline: 'The session reported an error.',
@@ -95,7 +123,7 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
       exitCode: 0,
       events,
       spokenSummary: 'The session is waiting for confirmation.',
-      runtimeSummary: summarizeSessionEvents(events),
+      runtimeSummary: summarizeSessionEvents(events, 0),
       pendingPrompt: {
         promptText: 'Approve file changes?',
       },
@@ -110,6 +138,7 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
     timeout: 15_000,
   });
 
+  const exitCode = result.status ?? -1;
   const events = [
     {
       type: 'session.started',
@@ -119,21 +148,21 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
     },
   ];
 
-  if (result.stdout) events.push(createStreamEvent('stdout', result.stdout));
-  if (result.stderr) events.push(createStreamEvent('stderr', result.stderr));
+  if (result.stdout) events.push(createStreamEvent('stdout', result.stdout, exitCode));
+  if (result.stderr) events.push(createStreamEvent('stderr', result.stderr, exitCode));
 
   events.push({
     type: 'session.exited',
     timestamp: now(),
-    summary: `Session exited with code ${result.status ?? -1}.`,
-    metadata: { exitCode: result.status ?? -1 },
+    summary: `Session exited with code ${exitCode}.`,
+    metadata: { exitCode },
   });
 
-  const summary = summarizeSessionEvents(events);
+  const summary = summarizeSessionEvents(events, exitCode);
 
   return {
     adapter: 'codex',
-    exitCode: result.status ?? -1,
+    exitCode,
     events,
     spokenSummary: summary.headline,
     runtimeSummary: summary,
@@ -142,6 +171,7 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
 }
 
 export function respondToCodexPromptInMain({ approved }) {
+  const exitCode = approved ? 0 : 1;
   const events = [
     {
       type: 'stream.chunk',
@@ -153,16 +183,16 @@ export function respondToCodexPromptInMain({ approved }) {
     {
       type: 'session.exited',
       timestamp: now(),
-      summary: `Session exited with code ${approved ? 0 : 1}.`,
-      metadata: { exitCode: approved ? 0 : 1 },
+      summary: `Session exited with code ${exitCode}.`,
+      metadata: { exitCode },
     },
   ];
 
-  const summary = summarizeSessionEvents(events);
+  const summary = summarizeSessionEvents(events, exitCode);
 
   return {
     adapter: 'codex',
-    exitCode: approved ? 0 : 1,
+    exitCode,
     events,
     spokenSummary: summary.headline,
     runtimeSummary: summary,
