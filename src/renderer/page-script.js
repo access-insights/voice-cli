@@ -129,11 +129,13 @@ function toTranscriptEntries(runtimeState) {
 function renderRunSummary(runtimeState, history) {
   const latest = history[0] || null;
   const events = Array.isArray(runtimeState.events) ? runtimeState.events : [];
+  const transcript = Array.isArray(runtimeState.transcript) ? runtimeState.transcript : [];
   const adapter = latest?.adapter || 'codex';
   const exitCode = latest?.exitCode ?? 'n/a';
   const eventCount = events.length;
+  const changeHints = transcript.filter((entry) => entry?.kind === 'change-hint').length;
   const activePrompt = viewState.activePrompt || 'No active prompt';
-  const chosenWorkspace = viewState.onboarding?.projectPath || 'No project selected';
+  const chosenWorkspace = latest?.projectPath || viewState.onboarding?.projectPath || 'No project selected';
 
   return `
     <section aria-labelledby="run-summary-heading">
@@ -143,6 +145,8 @@ function renderRunSummary(runtimeState, history) {
         <li><strong>Workspace:</strong> ${escapeHtml(chosenWorkspace)}</li>
         <li><strong>Exit code:</strong> ${escapeHtml(exitCode)}</li>
         <li><strong>Events:</strong> ${escapeHtml(eventCount)}</li>
+        <li><strong>Transcript entries:</strong> ${escapeHtml(transcript.length)}</li>
+        <li><strong>Change hints:</strong> ${escapeHtml(changeHints)}</li>
         <li><strong>Elapsed:</strong> ${escapeHtml(getElapsedLabel())}</li>
         <li><strong>Prompt:</strong> ${escapeHtml(activePrompt)}</li>
         <li><strong>Summary:</strong> ${escapeHtml(runtimeState.runtimeSummary.headline)}</li>
@@ -165,16 +169,19 @@ function renderTranscript(entries) {
             ? 'Error'
             : entry.kind === 'lifecycle'
               ? 'System'
-              : entry.kind === 'user'
-                ? 'User'
-                : entry.kind === 'assistant'
-                  ? 'Assistant summary'
-                  : 'Tool output';
+              : entry.kind === 'change-hint'
+                ? 'Changed files or diff hint'
+                : entry.kind === 'user'
+                  ? 'User'
+                  : entry.kind === 'assistant'
+                    ? 'Assistant summary'
+                    : 'Tool output';
 
         const summaryId = `transcript-summary-${index}`;
         const rawId = `transcript-raw-${index}`;
+        const detailLabel = entry.detailLabel || 'Raw output details';
         const rawSection = entry.raw && entry.raw !== entry.summary
-          ? `<details><summary aria-controls="${rawId}">Raw output details</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
+          ? `<details><summary aria-controls="${rawId}">${escapeHtml(detailLabel)}</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
           : '';
 
         const content = `
@@ -208,6 +215,9 @@ function renderSelectedRecord() {
       <p><strong>Summary:</strong> ${escapeHtml(record.spokenSummary)}</p>
       <p><strong>Exit code:</strong> ${escapeHtml(record.exitCode)}</p>
       <p><strong>Status:</strong> ${escapeHtml(record.runtimeSummary?.headline || 'No runtime summary')}</p>
+      <p><strong>Workspace:</strong> ${escapeHtml(record.projectPath || 'Unknown')}</p>
+      <p><strong>Transcript entries:</strong> ${escapeHtml(record.transcriptEntryCount ?? transcriptEntries.length)}</p>
+      <p><strong>Change hints:</strong> ${escapeHtml(record.changeHints ?? 0)}</p>
       <button type="button" id="clear-history-selection-button">Back to live view</button>
       ${renderTranscript(transcriptEntries)}
     </section>
@@ -228,7 +238,7 @@ function renderHistory(history) {
             <button type="button" class="history-load-button" data-file-name="${escapeHtml(item.fileName)}">
               ${isSelected ? 'Selected' : 'Load'}
             </button>
-            <strong>${isSelected ? '▶ ' : ''}</strong>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | exit ${escapeHtml(item.exitCode)} | ${escapeHtml(item.spokenSummary)}
+            <strong>${isSelected ? '▶ ' : ''}</strong>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | exit ${escapeHtml(item.exitCode)} | ${escapeHtml(item.runtimeStatus || 'unknown')} | changes ${escapeHtml(item.changeHints ?? 0)} | ${escapeHtml(item.spokenSummary)}
           </li>
         `;
       }).join('')}
@@ -430,6 +440,7 @@ async function persistAndTranscribeRecordedAudio(target) {
 
   if (!persisted?.ok || !persisted?.filePath) {
     viewState.lastVoiceMessage = `Capture save failed: ${persisted?.reason || 'unknown error'}`;
+    setLiveMessage(viewState.lastVoiceMessage);
     await renderIntoTarget(target);
     return;
   }
@@ -443,13 +454,15 @@ async function persistAndTranscribeRecordedAudio(target) {
     const transcriptText = await loadTranscriptionText(transcription);
     if (transcriptText) {
       viewState.draftPrompt = transcriptText;
-      viewState.lastVoiceMessage = `Recorded audio transcribed and loaded into the prompt. Output: ${transcription.outPath}`;
+      viewState.lastVoiceMessage = `Recorded audio transcribed and loaded into the prompt. Provider: ${transcription.provider || 'Whisper'}. Output: ${transcription.outPath}`;
     } else {
       viewState.lastVoiceMessage = `Recorded audio transcribed with ${transcription.provider || 'Whisper'}. Output: ${transcription.outPath}`;
     }
   } else {
-    viewState.lastVoiceMessage = `Recorded transcription failed: ${transcription?.reason || 'unknown error'}`;
+    const fallbackHint = transcription?.fallbackRecommended ? ' Use transcript-first fallback or provide a different audio file.' : '';
+    viewState.lastVoiceMessage = `Recorded transcription failed: ${transcription?.reason || 'unknown error'}.${fallbackHint}`;
   }
+  setLiveMessage(viewState.lastVoiceMessage);
   await renderIntoTarget(target);
 }
 
@@ -601,7 +614,12 @@ async function bindInteractions(target) {
       event.preventDefault();
       const text = speakInput && 'value' in speakInput && typeof speakInput.value === 'string' ? speakInput.value : '';
       const result = await window.voiceCli?.voice?.speakText?.(text, { rate: 1.0 });
-      viewState.lastVoiceMessage = result?.ok ? `Spoken via ${result.backend || 'tts backend'}.` : `Speak failed: ${result?.reason || 'unknown error'}`;
+      if (result?.ok) {
+        viewState.lastVoiceMessage = `Spoken via ${result.backend || 'tts backend'} at rate ${result.rate || 1.0}.`;
+      } else {
+        const fallbackHint = result?.fallbackRecommended ? ' Transcript-first fallback remains available.' : '';
+        viewState.lastVoiceMessage = `Speak failed: ${result?.reason || 'unknown error'}.${fallbackHint}`;
+      }
       setLiveMessage(viewState.lastVoiceMessage);
       await renderIntoTarget(target);
       writePageDiagnostic(`Voice speak result: ${viewState.lastVoiceMessage}`);
@@ -624,7 +642,8 @@ async function bindInteractions(target) {
           viewState.lastVoiceMessage = `Transcribed with ${result.provider || 'Whisper'}. Output: ${result.outPath}`;
         }
       } else {
-        viewState.lastVoiceMessage = `Transcription failed: ${result?.reason || 'unknown error'}`;
+        const fallbackHint = result?.fallbackRecommended ? ' Try transcript-first fallback or a different audio file.' : '';
+        viewState.lastVoiceMessage = `Transcription failed: ${result?.reason || 'unknown error'}.${fallbackHint}`;
       }
       setLiveMessage(viewState.lastVoiceMessage);
       await renderIntoTarget(target);

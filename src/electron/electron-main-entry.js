@@ -45,6 +45,26 @@ function getSelectedWorkspacePath() {
   return process.cwd();
 }
 
+const activeSessionState = {
+  status: 'idle',
+  projectPath: '',
+  prompt: '',
+  pendingPrompt: null,
+  startedAt: '',
+};
+
+function updateActiveSession(patch = {}) {
+  Object.assign(activeSessionState, patch);
+}
+
+function clearActiveSession() {
+  activeSessionState.status = 'idle';
+  activeSessionState.projectPath = '';
+  activeSessionState.prompt = '';
+  activeSessionState.pendingPrompt = null;
+  activeSessionState.startedAt = '';
+}
+
 export function createRealElectronLaunchSpec(projectPath = process.cwd()) {
   const config = createElectronBootstrapConfig();
   const window = createDesktopWindowSpec();
@@ -134,27 +154,95 @@ if (process.versions.electron) {
     writeDiagnostic(`IPC persisted session summary at ${filePath}`);
     return { filePath };
   });
-  electronModule.ipcMain.handle('voice-cli:start-session', (event, prompt) => {
+  electronModule.ipcMain.handle('voice-cli:start-session', async (event, prompt) => {
+    if (activeSessionState.status === 'running' || activeSessionState.status === 'waiting-for-input') {
+      const reason = 'A session is already active. Wait for it to finish or respond to the current prompt first.';
+      writeDiagnostic(`IPC rejected start-session: ${reason}`);
+      return {
+        adapter: 'codex',
+        exitCode: 1,
+        events: [{
+          type: 'error.detected',
+          timestamp: new Date().toISOString(),
+          source: 'system',
+          raw: reason,
+          summary: reason,
+        }],
+        transcript: [],
+        spokenSummary: reason,
+        runtimeSummary: { status: 'failed', headline: reason, detailsAvailable: true },
+        pendingPrompt: activeSessionState.pendingPrompt,
+        projectPath: activeSessionState.projectPath || getSelectedWorkspacePath(),
+      };
+    }
+
     const projectPath = getSelectedWorkspacePath();
-    const result = runCodexVerticalSliceInMain({
+    updateActiveSession({
+      status: 'starting',
+      projectPath,
+      prompt: String(prompt || '').trim(),
+      pendingPrompt: null,
+      startedAt: new Date().toISOString(),
+    });
+
+    const result = await runCodexVerticalSliceInMain({
       projectPath,
       prompt,
       onEvent: (sessionEvent) => {
         event.sender.send('voice-cli:session-event', { event: sessionEvent });
       },
+      onLifecycle: (lifecycle) => {
+        if (lifecycle?.state === 'running') {
+          updateActiveSession({ status: 'running' });
+        } else if (lifecycle?.state === 'waiting-for-input') {
+          updateActiveSession({ status: 'waiting-for-input', pendingPrompt: 'Approve file changes?' });
+        } else {
+          clearActiveSession();
+        }
+      },
     });
+
+    if (result?.pendingPrompt?.promptText) {
+      updateActiveSession({ status: 'waiting-for-input', pendingPrompt: result.pendingPrompt.promptText });
+    } else {
+      clearActiveSession();
+    }
+
     const filePath = persistSessionRecord(process.cwd(), result);
-    writeDiagnostic(`IPC started real session in ${projectPath} and persisted record at ${filePath}`);
+    writeDiagnostic(`IPC started real session in ${projectPath} with state ${activeSessionState.status} and persisted record at ${filePath}`);
     return result;
   });
   electronModule.ipcMain.handle('voice-cli:respond-session', (event, input) => {
+    if (activeSessionState.status !== 'waiting-for-input') {
+      const reason = 'No active confirmation prompt is waiting for input.';
+      writeDiagnostic(`IPC rejected respond-session: ${reason}`);
+      return {
+        adapter: 'codex',
+        exitCode: 1,
+        events: [{
+          type: 'error.detected',
+          timestamp: new Date().toISOString(),
+          source: 'system',
+          raw: reason,
+          summary: reason,
+        }],
+        transcript: [],
+        spokenSummary: reason,
+        runtimeSummary: { status: 'failed', headline: reason, detailsAvailable: true },
+        pendingPrompt: null,
+        projectPath: activeSessionState.projectPath || getSelectedWorkspacePath(),
+      };
+    }
+
     const approved = /^y(es)?$/i.test(String(input).trim());
     const result = respondToCodexPromptInMain({
       approved,
+      projectPath: activeSessionState.projectPath || getSelectedWorkspacePath(),
       onEvent: (sessionEvent) => {
         event.sender.send('voice-cli:session-event', { event: sessionEvent });
       },
     });
+    clearActiveSession();
     const filePath = persistSessionRecord(process.cwd(), result);
     writeDiagnostic(`IPC responded to session prompt and persisted record at ${filePath}`);
     return result;

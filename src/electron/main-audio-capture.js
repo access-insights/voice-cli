@@ -25,11 +25,13 @@ export function persistCapturedAudioInMain(bufferBase64, options = {}) {
       filePath,
       bytes: buffer.byteLength,
       mimeType: options.mimeType || '',
+      extension,
     };
   } catch (error) {
     return {
       ok: false,
       reason: error instanceof Error ? error.message : String(error),
+      extension,
     };
   }
 }

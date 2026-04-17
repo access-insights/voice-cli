@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { shapeTranscript } from './transcript-shaping.js';
 
 function now() {
@@ -101,7 +101,7 @@ function summarizeSessionEvents(events, exitCode = 0) {
   };
 }
 
-export function runCodexVerticalSliceInMain({ projectPath, prompt, onEvent }) {
+export async function runCodexVerticalSliceInMain({ projectPath, prompt, onEvent, onLifecycle }) {
   if (/approve|permission|allow/i.test(prompt)) {
     const events = [
       {
@@ -109,6 +109,12 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt, onEvent }) {
         timestamp: now(),
         summary: 'Started Codex CLI session.',
         metadata: { mode: 'confirmation-smoke' },
+      },
+      {
+        type: 'session.progress',
+        timestamp: now(),
+        summary: 'The CLI session is running.',
+        metadata: { prompt, projectPath },
       },
       {
         type: 'prompt.detected',
@@ -120,6 +126,7 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt, onEvent }) {
     ];
 
     for (const event of events) onEvent?.(event);
+    onLifecycle?.({ state: 'waiting-for-input', prompt });
 
     return {
       adapter: 'codex',
@@ -131,70 +138,146 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt, onEvent }) {
       pendingPrompt: {
         promptText: 'Approve file changes?',
       },
+      projectPath,
+      startedAt: events[0].timestamp,
+      endedAt: events.at(-1)?.timestamp ?? now(),
     };
   }
 
-  const command = process.env.VOICE_CLI_CODEX_COMMAND || 'codex';
-  const args = ['exec', '--skip-git-repo-check', `In project ${projectPath}: ${prompt}`];
-  const startedEvent = {
-    type: 'session.started',
-    timestamp: now(),
-    summary: 'Started Codex CLI session.',
-    metadata: { command, args },
-  };
-  onEvent?.(startedEvent);
+  return await new Promise((resolve) => {
+    const command = process.env.VOICE_CLI_CODEX_COMMAND || 'codex';
+    const args = ['exec', '--skip-git-repo-check', `In project ${projectPath}: ${prompt}`];
+    const startedEvent = {
+      type: 'session.started',
+      timestamp: now(),
+      summary: 'Started Codex CLI session.',
+      metadata: { command, args, projectPath },
+    };
+    const progressEvent = {
+      type: 'session.progress',
+      timestamp: now(),
+      summary: 'The CLI session is running.',
+      metadata: { prompt, projectPath },
+    };
 
-  const progressEvent = {
-    type: 'session.progress',
-    timestamp: now(),
-    summary: 'The CLI session is running.',
-    metadata: { prompt },
-  };
-  onEvent?.(progressEvent);
+    const events = [startedEvent, progressEvent];
+    onEvent?.(startedEvent);
+    onEvent?.(progressEvent);
+    onLifecycle?.({ state: 'running', prompt });
 
-  const result = spawnSync(command, args, {
-    cwd: projectPath,
-    encoding: 'utf8',
-    timeout: 15_000,
+    let settled = false;
+    let stdoutBuffer = '';
+    let stderrBuffer = '';
+    let child = null;
+
+    function flushBuffer(source, buffer, exitCode = 0) {
+      const raw = String(buffer || '').trim();
+      if (!raw) return;
+      const event = createStreamEvent(source, raw, exitCode);
+      events.push(event);
+      onEvent?.(event);
+    }
+
+    function finish(exitCode, extraEvent = null) {
+      if (settled) return;
+      settled = true;
+      flushBuffer('stdout', stdoutBuffer, exitCode);
+      flushBuffer('stderr', stderrBuffer, exitCode);
+      stdoutBuffer = '';
+      stderrBuffer = '';
+      if (extraEvent) {
+        events.push(extraEvent);
+        onEvent?.(extraEvent);
+      }
+      const exitedEvent = {
+        type: 'session.exited',
+        timestamp: now(),
+        summary: `Session exited with code ${exitCode}.`,
+        metadata: { exitCode },
+      };
+      events.push(exitedEvent);
+      onEvent?.(exitedEvent);
+      onLifecycle?.({ state: 'completed', prompt, exitCode });
+      const summary = summarizeSessionEvents(events, exitCode);
+      resolve({
+        adapter: 'codex',
+        exitCode,
+        events,
+        transcript: shapeTranscript(events),
+        spokenSummary: summary.headline,
+        runtimeSummary: summary,
+        pendingPrompt: null,
+        projectPath,
+        startedAt: startedEvent.timestamp,
+        endedAt: exitedEvent.timestamp,
+      });
+    }
+
+    try {
+      child = spawn(command, args, {
+        cwd: projectPath,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      finish(1, {
+        type: 'error.detected',
+        timestamp: now(),
+        source: 'stderr',
+        raw: message,
+        summary: 'The CLI could not be started.',
+      });
+      return;
+    }
+
+    const timeoutMs = 15_000;
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      onLifecycle?.({ state: 'timed-out', prompt });
+      child?.kill('SIGTERM');
+      finish(124, {
+        type: 'error.detected',
+        timestamp: now(),
+        source: 'stderr',
+        raw: `Session timed out after ${timeoutMs}ms.`,
+        summary: 'The CLI session timed out before completing.',
+      });
+    }, timeoutMs);
+
+    child.stdout?.on('data', (chunk) => {
+      stdoutBuffer += String(chunk);
+      const parts = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = parts.pop() ?? '';
+      for (const part of parts) flushBuffer('stdout', part, 0);
+    });
+
+    child.stderr?.on('data', (chunk) => {
+      stderrBuffer += String(chunk);
+      const parts = stderrBuffer.split(/\r?\n/);
+      stderrBuffer = parts.pop() ?? '';
+      for (const part of parts) flushBuffer('stderr', part, 0);
+    });
+
+    child.on('error', (error) => {
+      clearTimeout(timeoutId);
+      const message = error instanceof Error ? error.message : String(error);
+      finish(1, {
+        type: 'error.detected',
+        timestamp: now(),
+        source: 'stderr',
+        raw: message,
+        summary: 'The CLI could not be started.',
+      });
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timeoutId);
+      finish(code ?? -1);
+    });
   });
-
-  const exitCode = result.status ?? -1;
-  const events = [startedEvent];
-
-  if (result.stdout) {
-    const event = createStreamEvent('stdout', result.stdout, exitCode);
-    events.push(event);
-    onEvent?.(event);
-  }
-  if (result.stderr) {
-    const event = createStreamEvent('stderr', result.stderr, exitCode);
-    events.push(event);
-    onEvent?.(event);
-  }
-
-  const exitedEvent = {
-    type: 'session.exited',
-    timestamp: now(),
-    summary: `Session exited with code ${exitCode}.`,
-    metadata: { exitCode },
-  };
-  events.push(exitedEvent);
-  onEvent?.(exitedEvent);
-
-  const summary = summarizeSessionEvents(events, exitCode);
-
-  return {
-    adapter: 'codex',
-    exitCode,
-    events,
-    transcript: shapeTranscript(events),
-    spokenSummary: summary.headline,
-    runtimeSummary: summary,
-    pendingPrompt: null,
-  };
 }
 
-export function respondToCodexPromptInMain({ approved, onEvent }) {
+export function respondToCodexPromptInMain({ approved, onEvent, projectPath = process.cwd() }) {
   const exitCode = approved ? 0 : 1;
   const events = [
     {
@@ -224,5 +307,8 @@ export function respondToCodexPromptInMain({ approved, onEvent }) {
     spokenSummary: summary.headline,
     runtimeSummary: summary,
     pendingPrompt: null,
+    projectPath,
+    startedAt: events[0].timestamp,
+    endedAt: events.at(-1)?.timestamp ?? now(),
   };
 }

@@ -34,15 +34,15 @@ export function loadTranscriptionTextInMain(filePath) {
 export function transcribeAudioInMain(audioPath, options = {}) {
   const normalizedPath = String(audioPath || '').trim();
   if (!normalizedPath) {
-    return { ok: false, reason: 'No audio path provided.' };
+    return { ok: false, reason: 'No audio path provided.', fallbackRecommended: true };
   }
   if (!existsSync(normalizedPath)) {
-    return { ok: false, reason: `Audio file not found: ${normalizedPath}` };
+    return { ok: false, reason: `Audio file not found: ${normalizedPath}`, fallbackRecommended: true };
   }
 
   const scriptPath = getWhisperScriptPath();
   if (!existsSync(scriptPath)) {
-    return { ok: false, reason: `Whisper helper not found: ${scriptPath}` };
+    return { ok: false, reason: `Whisper helper not found: ${scriptPath}`, fallbackRecommended: true };
   }
 
   const outPath = options.outPath || join(process.cwd(), '.voice-cli', 'last-transcription.txt');
@@ -51,18 +51,27 @@ export function transcribeAudioInMain(audioPath, options = {}) {
   if (options.prompt) args.push('--prompt', String(options.prompt));
   if (options.model) args.push('--model', String(options.model));
 
+  const startedAt = new Date().toISOString();
   const result = spawnSync('bash', args, {
     cwd: process.cwd(),
     encoding: 'utf8',
     env: process.env,
     timeout: 120000,
   });
+  const endedAt = new Date().toISOString();
 
   if (result.status !== 0) {
     return {
       ok: false,
       reason: result.stderr?.trim() || result.stdout?.trim() || `Whisper transcription failed with exit code ${result.status ?? -1}.`,
       exitCode: result.status ?? -1,
+      stdout: result.stdout?.trim() || '',
+      stderr: result.stderr?.trim() || '',
+      audioPath: normalizedPath,
+      outPath,
+      startedAt,
+      endedAt,
+      fallbackRecommended: true,
     };
   }
 
@@ -72,5 +81,8 @@ export function transcribeAudioInMain(audioPath, options = {}) {
     model: options.model || 'whisper-1',
     audioPath: normalizedPath,
     outPath: result.stdout.trim() || outPath,
+    startedAt,
+    endedAt,
+    fallbackRecommended: false,
   };
 }

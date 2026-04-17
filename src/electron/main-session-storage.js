@@ -8,12 +8,20 @@ function ensureSessionDir(baseDir = process.cwd()) {
 }
 
 function toSummaryRecord(name, raw) {
+  const transcript = Array.isArray(raw.transcript) ? raw.transcript : [];
+  const changeHints = transcript.filter((entry) => entry?.kind === 'change-hint').length;
   return {
     fileName: name,
     adapter: raw.adapter ?? 'unknown',
     exitCode: raw.exitCode ?? -1,
     spokenSummary: raw.spokenSummary ?? 'No summary',
     timestampGuess: name.split('-session.json')[0],
+    projectPath: raw.projectPath ?? '',
+    runtimeStatus: raw.runtimeSummary?.status ?? 'unknown',
+    transcriptEntryCount: transcript.length,
+    changeHints,
+    startedAt: raw.startedAt ?? '',
+    endedAt: raw.endedAt ?? '',
   };
 }
 
@@ -51,5 +59,8 @@ export function loadSessionRecord(baseDir = process.cwd(), fileName) {
     transcript: Array.isArray(raw.transcript) ? raw.transcript : [],
     runtimeSummary: raw.runtimeSummary ?? null,
     pendingPrompt: raw.pendingPrompt ?? null,
+    projectPath: raw.projectPath ?? '',
+    startedAt: raw.startedAt ?? '',
+    endedAt: raw.endedAt ?? '',
   };
 }
