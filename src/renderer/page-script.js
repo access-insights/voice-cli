@@ -15,8 +15,23 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+const viewState = {
+  isStartingSession: false,
+  activePrompt: '',
+  runStartedAt: 0,
+};
+
+function getElapsedLabel() {
+  if (!viewState.runStartedAt) return 'Not running';
+  const elapsedMs = Math.max(0, Date.now() - viewState.runStartedAt);
+  return `${(elapsedMs / 1000).toFixed(1)}s`;
+}
+
 function renderStatusBadge(runtimeSummary) {
-  const status = runtimeSummary?.status || 'ok';
+  const status = viewState.isStartingSession
+    ? 'running'
+    : (runtimeSummary?.status || 'ok');
+
   const label = status === 'error'
     ? 'Error'
     : status === 'needs_confirmation'
@@ -77,6 +92,7 @@ function renderRunSummary(runtimeState, history) {
   const adapter = latest?.adapter || 'codex';
   const exitCode = latest?.exitCode ?? 'n/a';
   const eventCount = events.length;
+  const activePrompt = viewState.activePrompt || 'No active prompt';
 
   return `
     <section aria-labelledby="run-summary-heading">
@@ -85,6 +101,8 @@ function renderRunSummary(runtimeState, history) {
         <li><strong>Adapter:</strong> ${escapeHtml(adapter)}</li>
         <li><strong>Exit code:</strong> ${escapeHtml(exitCode)}</li>
         <li><strong>Events:</strong> ${escapeHtml(eventCount)}</li>
+        <li><strong>Elapsed:</strong> ${escapeHtml(getElapsedLabel())}</li>
+        <li><strong>Prompt:</strong> ${escapeHtml(activePrompt)}</li>
         <li><strong>Summary:</strong> ${escapeHtml(runtimeState.runtimeSummary.headline)}</li>
       </ul>
     </section>
@@ -140,6 +158,8 @@ function renderShell(runtimeState, history) {
   ` : '';
 
   const transcriptEntries = toTranscriptEntries(Array.isArray(runtimeState.events) ? runtimeState.events : []);
+  const startButtonLabel = viewState.isStartingSession ? 'Starting…' : 'Start session';
+  const startDisabled = viewState.isStartingSession ? 'disabled' : '';
 
   return `
     <section aria-labelledby="runtime-heading">
@@ -152,8 +172,8 @@ function renderShell(runtimeState, history) {
       <h2 id="controls-heading">Session controls</h2>
       <form id="session-start-form">
         <label for="session-start-prompt">Start prompt</label>
-        <input id="session-start-prompt" name="prompt" type="text" value="Summarize the current project state." />
-        <button id="session-start-button" type="submit">Start session</button>
+        <input id="session-start-prompt" name="prompt" type="text" value="Summarize the current project state." ${startDisabled} />
+        <button id="session-start-button" type="submit" ${startDisabled}>${startButtonLabel}</button>
       </form>
     </section>
     ${confirmationSection}
@@ -175,12 +195,21 @@ async function bindInteractions(target) {
   if (form) {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (viewState.isStartingSession) return;
       const prompt = promptInput && 'value' in promptInput && typeof promptInput.value === 'string'
         ? promptInput.value
         : 'Summarize the current project state.';
-      writePageDiagnostic(`Submitting prompt: ${prompt}`);
-      await window.voiceCli?.session?.start?.(prompt);
+      viewState.isStartingSession = true;
+      viewState.activePrompt = prompt;
+      viewState.runStartedAt = Date.now();
       await renderIntoTarget(target);
+      writePageDiagnostic(`Submitting prompt: ${prompt}`);
+      try {
+        await window.voiceCli?.session?.start?.(prompt);
+      } finally {
+        viewState.isStartingSession = false;
+        await renderIntoTarget(target);
+      }
       writePageDiagnostic('Runtime shell rerendered after start.');
     });
   }
@@ -231,6 +260,8 @@ async function mount() {
 
   const testMode = window.voiceCli?.electron?.getTestMode?.() || '';
   if (testMode === 'confirmation') {
+    viewState.activePrompt = 'Please approve file changes?';
+    viewState.runStartedAt = Date.now();
     await window.voiceCli?.session?.start?.('Please approve file changes?');
     await renderIntoTarget(target);
     writePageDiagnostic('Test mode seeded confirmation flow.');
@@ -242,7 +273,12 @@ async function mount() {
   }
 
   if (testMode === 'real-session') {
+    viewState.isStartingSession = true;
+    viewState.activePrompt = 'Say hello briefly.';
+    viewState.runStartedAt = Date.now();
+    await renderIntoTarget(target);
     await window.voiceCli?.session?.start?.('Say hello briefly.');
+    viewState.isStartingSession = false;
     await renderIntoTarget(target);
     writePageDiagnostic('Test mode started real IPC-backed session flow.');
   }
