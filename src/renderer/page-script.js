@@ -71,6 +71,26 @@ function toTranscriptEntries(events) {
   return entries;
 }
 
+function renderRunSummary(runtimeState, history) {
+  const latest = history[0] || null;
+  const events = Array.isArray(runtimeState.events) ? runtimeState.events : [];
+  const adapter = latest?.adapter || 'codex';
+  const exitCode = latest?.exitCode ?? 'n/a';
+  const eventCount = events.length;
+
+  return `
+    <section aria-labelledby="run-summary-heading">
+      <h2 id="run-summary-heading">Latest run</h2>
+      <ul>
+        <li><strong>Adapter:</strong> ${escapeHtml(adapter)}</li>
+        <li><strong>Exit code:</strong> ${escapeHtml(exitCode)}</li>
+        <li><strong>Events:</strong> ${escapeHtml(eventCount)}</li>
+        <li><strong>Summary:</strong> ${escapeHtml(runtimeState.runtimeSummary.headline)}</li>
+      </ul>
+    </section>
+  `;
+}
+
 function renderTranscript(entries) {
   if (!entries.length) {
     return '<p>No transcript captured yet.</p>';
@@ -84,18 +104,22 @@ function renderTranscript(entries) {
           : entry.kind === 'error'
             ? 'Error'
             : entry.kind === 'lifecycle'
-              ? 'Lifecycle'
+              ? 'System'
               : entry.source === 'stderr'
-                ? 'stderr'
-                : 'stdout';
+                ? 'CLI stderr'
+                : 'CLI stdout';
 
-        return `
-          <li>
-            <strong>${escapeHtml(label)}</strong>
-            <p>${escapeHtml(entry.summary)}</p>
-            ${entry.raw ? `<details><summary>Raw output</summary><pre>${escapeHtml(entry.raw)}</pre></details>` : ''}
-          </li>
+        const content = `
+          <strong>${escapeHtml(label)}</strong>
+          <p>${escapeHtml(entry.summary)}</p>
+          ${entry.raw ? `<details><summary>Raw output</summary><pre>${escapeHtml(entry.raw)}</pre></details>` : ''}
         `;
+
+        if (entry.kind === 'lifecycle') {
+          return `<li><details><summary>${escapeHtml(label)} event</summary>${content}</details></li>`;
+        }
+
+        return `<li>${content}</li>`;
       }).join('')}
     </ol>
   `;
@@ -123,6 +147,7 @@ function renderShell(runtimeState, history) {
       ${renderStatusBadge(runtimeState.runtimeSummary)}
       <p>${escapeHtml(runtimeState.runtimeSummary.headline)}</p>
     </section>
+    ${renderRunSummary(runtimeState, history)}
     <section aria-labelledby="controls-heading">
       <h2 id="controls-heading">Session controls</h2>
       <form id="session-start-form">
