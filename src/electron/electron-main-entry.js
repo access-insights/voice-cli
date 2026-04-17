@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { loadSessionSummaries, persistSessionSummary } from './main-session-storage.js';
+import { loadSessionRecord, loadSessionSummaries, persistSessionRecord, persistSessionSummary } from './main-session-storage.js';
 import { respondToCodexPromptInMain, runCodexVerticalSliceInMain } from './main-session-runner.js';
 
 function createDesktopWindowSpec() {
@@ -122,25 +122,18 @@ if (process.versions.electron) {
   });
   electronModule.ipcMain.handle('voice-cli:start-session', (_event, prompt) => {
     const result = runCodexVerticalSliceInMain({ projectPath: process.cwd(), prompt });
-    const filePath = persistSessionSummary(process.cwd(), {
-      adapter: result.adapter,
-      exitCode: result.exitCode,
-      spokenSummary: result.spokenSummary,
-    });
-    writeDiagnostic(`IPC started real session and persisted summary at ${filePath}`);
+    const filePath = persistSessionRecord(process.cwd(), result);
+    writeDiagnostic(`IPC started real session and persisted record at ${filePath}`);
     return result;
   });
   electronModule.ipcMain.handle('voice-cli:respond-session', (_event, input) => {
     const approved = /^y(es)?$/i.test(String(input).trim());
     const result = respondToCodexPromptInMain({ approved });
-    const filePath = persistSessionSummary(process.cwd(), {
-      adapter: result.adapter,
-      exitCode: result.exitCode,
-      spokenSummary: result.spokenSummary,
-    });
-    writeDiagnostic(`IPC responded to session prompt and persisted summary at ${filePath}`);
+    const filePath = persistSessionRecord(process.cwd(), result);
+    writeDiagnostic(`IPC responded to session prompt and persisted record at ${filePath}`);
     return result;
   });
+  electronModule.ipcMain.handle('voice-cli:load-session-record', (_event, fileName) => loadSessionRecord(process.cwd(), fileName));
   launchElectronApp({
     app: electronModule.app,
     BrowserWindow: electronModule.BrowserWindow,
