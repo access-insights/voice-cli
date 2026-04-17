@@ -19,6 +19,13 @@ function summarizeRuntimeHealth(events) {
     };
   }
 
+  if (events.some((event) => event.type === 'session.progress')) {
+    return {
+      status: 'running',
+      headline: 'The session is running.',
+    };
+  }
+
   return {
     status: 'ok',
     headline: 'The session completed without urgent intervention.',
@@ -100,6 +107,11 @@ function createRuntimeBridge() {
     runtimeSummary = summarizeRuntimeHealth(events);
   }
 
+  ipcRenderer.on('voice-cli:session-event', (_event, payload) => {
+    if (!payload?.event) return;
+    emit(payload.event);
+  });
+
   return {
     async start(prompt) {
       if (process.env.VOICE_CLI_TEST_MODE === 'confirmation') {
@@ -116,6 +128,8 @@ function createRuntimeBridge() {
         return { accepted: true, prompt, runtimeSummary };
       }
 
+      events.length = 0;
+      runtimeSummary = summarizeRuntimeHealth(events);
       const result = await ipcRenderer.invoke('voice-cli:start-session', prompt);
       replaceEvents(Array.isArray(result?.events) ? result.events : []);
       runtimeSummary = result?.runtimeSummary ?? summarizeRuntimeHealth(events);

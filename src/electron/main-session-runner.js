@@ -100,7 +100,7 @@ function summarizeSessionEvents(events, exitCode = 0) {
   };
 }
 
-export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
+export function runCodexVerticalSliceInMain({ projectPath, prompt, onEvent }) {
   if (/approve|permission|allow/i.test(prompt)) {
     const events = [
       {
@@ -118,6 +118,8 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
       },
     ];
 
+    for (const event of events) onEvent?.(event);
+
     return {
       adapter: 'codex',
       exitCode: 0,
@@ -132,6 +134,22 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
 
   const command = process.env.VOICE_CLI_CODEX_COMMAND || 'codex';
   const args = ['exec', '--skip-git-repo-check', `In project ${projectPath}: ${prompt}`];
+  const startedEvent = {
+    type: 'session.started',
+    timestamp: now(),
+    summary: 'Started Codex CLI session.',
+    metadata: { command, args },
+  };
+  onEvent?.(startedEvent);
+
+  const progressEvent = {
+    type: 'session.progress',
+    timestamp: now(),
+    summary: 'The CLI session is running.',
+    metadata: { prompt },
+  };
+  onEvent?.(progressEvent);
+
   const result = spawnSync(command, args, {
     cwd: projectPath,
     encoding: 'utf8',
@@ -139,24 +157,27 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
   });
 
   const exitCode = result.status ?? -1;
-  const events = [
-    {
-      type: 'session.started',
-      timestamp: now(),
-      summary: 'Started Codex CLI session.',
-      metadata: { command, args },
-    },
-  ];
+  const events = [startedEvent];
 
-  if (result.stdout) events.push(createStreamEvent('stdout', result.stdout, exitCode));
-  if (result.stderr) events.push(createStreamEvent('stderr', result.stderr, exitCode));
+  if (result.stdout) {
+    const event = createStreamEvent('stdout', result.stdout, exitCode);
+    events.push(event);
+    onEvent?.(event);
+  }
+  if (result.stderr) {
+    const event = createStreamEvent('stderr', result.stderr, exitCode);
+    events.push(event);
+    onEvent?.(event);
+  }
 
-  events.push({
+  const exitedEvent = {
     type: 'session.exited',
     timestamp: now(),
     summary: `Session exited with code ${exitCode}.`,
     metadata: { exitCode },
-  });
+  };
+  events.push(exitedEvent);
+  onEvent?.(exitedEvent);
 
   const summary = summarizeSessionEvents(events, exitCode);
 
@@ -170,7 +191,7 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt }) {
   };
 }
 
-export function respondToCodexPromptInMain({ approved }) {
+export function respondToCodexPromptInMain({ approved, onEvent }) {
   const exitCode = approved ? 0 : 1;
   const events = [
     {
@@ -187,6 +208,8 @@ export function respondToCodexPromptInMain({ approved }) {
       metadata: { exitCode },
     },
   ];
+
+  for (const event of events) onEvent?.(event);
 
   const summary = summarizeSessionEvents(events, exitCode);
 

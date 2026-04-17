@@ -17,6 +17,7 @@ function escapeHtml(value) {
 
 const viewState = {
   isStartingSession: false,
+  isSessionRunning: false,
   activePrompt: '',
   runStartedAt: 0,
   timingIntervalId: null,
@@ -33,7 +34,11 @@ function getElapsedLabel() {
 
 function renderBanner(runtimeSummary) {
   if (viewState.isStartingSession) {
-    return '<p><strong>Starting session...</strong> The shell is waiting for the CLI run to return.</p>';
+    return '<p><strong>Starting session...</strong> Initializing the CLI session.</p>';
+  }
+
+  if (viewState.isSessionRunning) {
+    return '<p><strong>Session running.</strong> Live updates will appear as the session progresses.</p>';
   }
 
   if (runtimeSummary?.status === 'error') {
@@ -48,7 +53,7 @@ function renderBanner(runtimeSummary) {
 }
 
 function renderStatusBadge(runtimeSummary) {
-  const status = viewState.isStartingSession
+  const status = viewState.isStartingSession || viewState.isSessionRunning
     ? 'running'
     : (runtimeSummary?.status || 'ok');
 
@@ -129,6 +134,16 @@ function toTranscriptEntries(events) {
           entries.push(chunkEntry);
         }
       }
+      continue;
+    }
+
+    if (event.type === 'session.progress') {
+      entries.push({
+        kind: 'lifecycle',
+        source: 'system',
+        summary: event.summary || 'Session is running.',
+        raw: '',
+      });
       continue;
     }
 
@@ -272,8 +287,8 @@ function renderShell(runtimeState, history) {
   ` : '';
 
   const transcriptEntries = toTranscriptEntries(Array.isArray(runtimeState.events) ? runtimeState.events : []);
-  const startButtonLabel = viewState.isStartingSession ? 'Starting…' : 'Start session';
-  const startDisabled = viewState.isStartingSession ? 'disabled' : '';
+  const startButtonLabel = viewState.isStartingSession || viewState.isSessionRunning ? 'Running…' : 'Start session';
+  const startDisabled = viewState.isStartingSession || viewState.isSessionRunning ? 'disabled' : '';
 
   return `
     <section aria-labelledby="runtime-heading">
@@ -315,7 +330,7 @@ function stopTimingRefresh() {
 function startTimingRefresh(target) {
   stopTimingRefresh();
   viewState.timingIntervalId = setInterval(() => {
-    if (!viewState.isStartingSession) {
+    if (!viewState.isStartingSession && !viewState.isSessionRunning) {
       stopTimingRefresh();
       return;
     }
@@ -339,11 +354,12 @@ async function bindInteractions(target) {
   if (form) {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (viewState.isStartingSession) return;
+      if (viewState.isStartingSession || viewState.isSessionRunning) return;
       const prompt = promptInput && 'value' in promptInput && typeof promptInput.value === 'string'
         ? promptInput.value
         : 'Summarize the current project state.';
       viewState.isStartingSession = true;
+      viewState.isSessionRunning = false;
       viewState.activePrompt = prompt;
       viewState.runStartedAt = Date.now();
       viewState.lastOutcome = 'running';
@@ -359,6 +375,7 @@ async function bindInteractions(target) {
         throw error;
       } finally {
         viewState.isStartingSession = false;
+        viewState.isSessionRunning = false;
         stopTimingRefresh();
         await renderIntoTarget(target);
       }
@@ -377,6 +394,7 @@ async function bindInteractions(target) {
       writePageDiagnostic(`Submitting confirmation response: ${response}`);
       await window.voiceCli?.session?.sendInput?.(response);
       viewState.lastOutcome = 'completed';
+      viewState.isSessionRunning = false;
       await maybeAutoSelectLatestHistory();
       await renderIntoTarget(target);
       writePageDiagnostic('Runtime shell rerendered after input response.');
@@ -428,7 +446,19 @@ async function mount() {
   await renderIntoTarget(target);
   writePageDiagnostic('Runtime shell rendered into #app.');
 
-  window.voiceCli?.session?.onEvent?.(async () => {
+  window.voiceCli?.session?.onEvent?.(async (event) => {
+    if (event?.type === 'session.progress') {
+      viewState.isStartingSession = false;
+      viewState.isSessionRunning = true;
+    }
+    if (event?.type === 'session.exited') {
+      viewState.isStartingSession = false;
+      viewState.isSessionRunning = false;
+    }
+    if (event?.type === 'prompt.detected') {
+      viewState.isStartingSession = false;
+      viewState.isSessionRunning = true;
+    }
     await renderIntoTarget(target);
     writePageDiagnostic('Runtime shell rerendered after event.');
   });
@@ -451,6 +481,7 @@ async function mount() {
 
   if (testMode === 'real-session') {
     viewState.isStartingSession = true;
+    viewState.isSessionRunning = false;
     viewState.activePrompt = 'Say hello briefly.';
     viewState.runStartedAt = Date.now();
     viewState.lastOutcome = 'running';
@@ -458,6 +489,7 @@ async function mount() {
     await renderIntoTarget(target);
     await window.voiceCli?.session?.start?.('Say hello briefly.');
     viewState.isStartingSession = false;
+    viewState.isSessionRunning = false;
     viewState.lastOutcome = 'completed';
     stopTimingRefresh();
     await maybeAutoSelectLatestHistory();

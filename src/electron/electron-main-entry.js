@@ -83,12 +83,13 @@ export async function launchElectronApp(electronRuntime) {
       }
       if (process.env.VOICE_CLI_AUTO_EXIT === '1') {
         writeDiagnostic('Main process auto-exit requested after did-finish-load.');
+        const autoExitDelayMs = Number.parseInt(process.env.VOICE_CLI_AUTO_EXIT_DELAY_MS || '500', 10);
         setTimeout(() => {
           browserWindow.close();
           if (typeof electronRuntime.app?.quit === 'function') {
             electronRuntime.app.quit();
           }
-        }, 500);
+        }, Number.isFinite(autoExitDelayMs) ? autoExitDelayMs : 500);
       }
     });
     browserWindow.webContents.on('did-fail-load', (_event, code, description) => {
@@ -120,15 +121,26 @@ if (process.versions.electron) {
     writeDiagnostic(`IPC persisted session summary at ${filePath}`);
     return { filePath };
   });
-  electronModule.ipcMain.handle('voice-cli:start-session', (_event, prompt) => {
-    const result = runCodexVerticalSliceInMain({ projectPath: process.cwd(), prompt });
+  electronModule.ipcMain.handle('voice-cli:start-session', (event, prompt) => {
+    const result = runCodexVerticalSliceInMain({
+      projectPath: process.cwd(),
+      prompt,
+      onEvent: (sessionEvent) => {
+        event.sender.send('voice-cli:session-event', { event: sessionEvent });
+      },
+    });
     const filePath = persistSessionRecord(process.cwd(), result);
     writeDiagnostic(`IPC started real session and persisted record at ${filePath}`);
     return result;
   });
-  electronModule.ipcMain.handle('voice-cli:respond-session', (_event, input) => {
+  electronModule.ipcMain.handle('voice-cli:respond-session', (event, input) => {
     const approved = /^y(es)?$/i.test(String(input).trim());
-    const result = respondToCodexPromptInMain({ approved });
+    const result = respondToCodexPromptInMain({
+      approved,
+      onEvent: (sessionEvent) => {
+        event.sender.send('voice-cli:session-event', { event: sessionEvent });
+      },
+    });
     const filePath = persistSessionRecord(process.cwd(), result);
     writeDiagnostic(`IPC responded to session prompt and persisted record at ${filePath}`);
     return result;
