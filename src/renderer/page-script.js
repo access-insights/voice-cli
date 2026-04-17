@@ -21,6 +21,8 @@ const viewState = {
   runStartedAt: 0,
   timingIntervalId: null,
   lastOutcome: 'idle',
+  selectedHistoryFile: '',
+  selectedRecord: null,
 };
 
 function getElapsedLabel() {
@@ -161,6 +163,45 @@ function renderTranscript(entries) {
   `;
 }
 
+function renderSelectedRecord() {
+  if (!viewState.selectedRecord) {
+    return '<p>No saved run selected.</p>';
+  }
+
+  const record = viewState.selectedRecord;
+  const transcriptEntries = toTranscriptEntries(Array.isArray(record.events) ? record.events : []);
+
+  return `
+    <section aria-labelledby="saved-run-heading">
+      <h2 id="saved-run-heading">Saved run details</h2>
+      <p><strong>File:</strong> ${escapeHtml(record.fileName)}</p>
+      <p><strong>Summary:</strong> ${escapeHtml(record.spokenSummary)}</p>
+      <p><strong>Exit code:</strong> ${escapeHtml(record.exitCode)}</p>
+      <p><strong>Status:</strong> ${escapeHtml(record.runtimeSummary?.headline || 'No runtime summary')}</p>
+      ${renderTranscript(transcriptEntries)}
+    </section>
+  `;
+}
+
+function renderHistory(history) {
+  if (!history.length) {
+    return '<p>No saved sessions yet.</p>';
+  }
+
+  return `
+    <ul>
+      ${history.map((item) => `
+        <li>
+          <button type="button" class="history-load-button" data-file-name="${escapeHtml(item.fileName)}">
+            Load
+          </button>
+          ${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | exit ${escapeHtml(item.exitCode)} | ${escapeHtml(item.spokenSummary)}
+        </li>
+      `).join('')}
+    </ul>
+  `;
+}
+
 function renderShell(runtimeState, history) {
   const confirmationSection = runtimeState.confirmation ? `
     <section aria-labelledby="confirmation-heading">
@@ -197,14 +238,15 @@ function renderShell(runtimeState, history) {
     </section>
     ${confirmationSection}
     <section aria-labelledby="transcript-heading">
-      <h2 id="transcript-heading">Transcript</h2>
+      <h2 id="transcript-heading">Live transcript</h2>
       ${renderTranscript(transcriptEntries)}
     </section>
     <section aria-labelledby="history-heading">
       <h2 id="history-heading">Session history</h2>
       <p>${history.length} recorded sessions.</p>
-      <ul>${history.map((item) => `<li>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | exit ${escapeHtml(item.exitCode)} | ${escapeHtml(item.spokenSummary)}</li>`).join('')}</ul>
+      ${renderHistory(history)}
     </section>
+    ${renderSelectedRecord()}
   `;
 }
 
@@ -272,6 +314,17 @@ async function bindInteractions(target) {
       writePageDiagnostic('Runtime shell rerendered after input response.');
     });
   }
+
+  document.querySelectorAll('.history-load-button').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const fileName = button.getAttribute('data-file-name') || '';
+      if (!fileName) return;
+      viewState.selectedHistoryFile = fileName;
+      viewState.selectedRecord = await window.voiceCli?.session?.getSessionRecord?.(fileName);
+      await renderIntoTarget(target);
+      writePageDiagnostic(`Loaded saved session record: ${fileName}`);
+    });
+  });
 }
 
 async function renderIntoTarget(target) {

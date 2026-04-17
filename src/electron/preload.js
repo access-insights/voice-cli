@@ -136,6 +136,9 @@ function createRuntimeBridge() {
     getHistory() {
       return ipcRenderer.invoke('voice-cli:load-history');
     },
+    getSessionRecord(fileName) {
+      return ipcRenderer.invoke('voice-cli:load-session-record', fileName);
+    },
     getState() {
       return {
         runtimeSummary,
@@ -157,6 +160,7 @@ contextBridge.exposeInMainWorld('voiceCli', {
     start: async (prompt) => runtimeBridge.start(prompt),
     sendInput: (input) => runtimeBridge.sendInput(input),
     getHistory: () => runtimeBridge.getHistory(),
+    getSessionRecord: (fileName) => runtimeBridge.getSessionRecord(fileName),
     getState: () => runtimeBridge.getState(),
     onEvent: (listener) => runtimeBridge.onEvent(listener),
   },
