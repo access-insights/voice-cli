@@ -48,6 +48,7 @@ export function loadSessionRecord(baseDir = process.cwd(), fileName) {
   return {
     ...toSummaryRecord(fileName, raw),
     events: Array.isArray(raw.events) ? raw.events : [],
+    transcript: Array.isArray(raw.transcript) ? raw.transcript : [],
     runtimeSummary: raw.runtimeSummary ?? null,
     pendingPrompt: raw.pendingPrompt ?? null,
   };

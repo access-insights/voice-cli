@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { shapeTranscript } from './transcript-shaping.js';
 
 function now() {
   return new Date().toISOString();
@@ -124,6 +125,7 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt, onEvent }) {
       adapter: 'codex',
       exitCode: 0,
       events,
+      transcript: shapeTranscript(events),
       spokenSummary: 'The session is waiting for confirmation.',
       runtimeSummary: summarizeSessionEvents(events, 0),
       pendingPrompt: {
@@ -185,6 +187,7 @@ export function runCodexVerticalSliceInMain({ projectPath, prompt, onEvent }) {
     adapter: 'codex',
     exitCode,
     events,
+    transcript: shapeTranscript(events),
     spokenSummary: summary.headline,
     runtimeSummary: summary,
     pendingPrompt: null,
@@ -217,6 +220,7 @@ export function respondToCodexPromptInMain({ approved, onEvent }) {
     adapter: 'codex',
     exitCode,
     events,
+    transcript: shapeTranscript(events),
     spokenSummary: summary.headline,
     runtimeSummary: summary,
     pendingPrompt: null,
