@@ -178,6 +178,7 @@ function renderSelectedRecord() {
       <p><strong>Summary:</strong> ${escapeHtml(record.spokenSummary)}</p>
       <p><strong>Exit code:</strong> ${escapeHtml(record.exitCode)}</p>
       <p><strong>Status:</strong> ${escapeHtml(record.runtimeSummary?.headline || 'No runtime summary')}</p>
+      <button type="button" id="clear-history-selection-button">Back to live view</button>
       ${renderTranscript(transcriptEntries)}
     </section>
   `;
@@ -190,14 +191,17 @@ function renderHistory(history) {
 
   return `
     <ul>
-      ${history.map((item) => `
-        <li>
-          <button type="button" class="history-load-button" data-file-name="${escapeHtml(item.fileName)}">
-            Load
-          </button>
-          ${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | exit ${escapeHtml(item.exitCode)} | ${escapeHtml(item.spokenSummary)}
-        </li>
-      `).join('')}
+      ${history.map((item) => {
+        const isSelected = item.fileName === viewState.selectedHistoryFile;
+        return `
+          <li>
+            <button type="button" class="history-load-button" data-file-name="${escapeHtml(item.fileName)}">
+              ${isSelected ? 'Selected' : 'Load'}
+            </button>
+            <strong>${isSelected ? '▶ ' : ''}</strong>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | exit ${escapeHtml(item.exitCode)} | ${escapeHtml(item.spokenSummary)}
+          </li>
+        `;
+      }).join('')}
     </ul>
   `;
 }
@@ -268,6 +272,16 @@ function startTimingRefresh(target) {
   }, 250);
 }
 
+async function maybeAutoSelectLatestHistory() {
+  if (!viewState.lastOutcome || viewState.lastOutcome !== 'completed') return;
+  const history = await window.voiceCli?.session?.getHistory?.();
+  if (!Array.isArray(history) || !history.length) return;
+  const latest = history[0];
+  if (!latest?.fileName) return;
+  viewState.selectedHistoryFile = latest.fileName;
+  viewState.selectedRecord = await window.voiceCli?.session?.getSessionRecord?.(latest.fileName);
+}
+
 async function bindInteractions(target) {
   const form = document.getElementById('session-start-form');
   const promptInput = document.getElementById('session-start-prompt');
@@ -288,6 +302,7 @@ async function bindInteractions(target) {
       try {
         await window.voiceCli?.session?.start?.(prompt);
         viewState.lastOutcome = 'completed';
+        await maybeAutoSelectLatestHistory();
       } catch (error) {
         viewState.lastOutcome = 'error';
         throw error;
@@ -310,6 +325,8 @@ async function bindInteractions(target) {
         : 'yes';
       writePageDiagnostic(`Submitting confirmation response: ${response}`);
       await window.voiceCli?.session?.sendInput?.(response);
+      viewState.lastOutcome = 'completed';
+      await maybeAutoSelectLatestHistory();
       await renderIntoTarget(target);
       writePageDiagnostic('Runtime shell rerendered after input response.');
     });
@@ -325,6 +342,16 @@ async function bindInteractions(target) {
       writePageDiagnostic(`Loaded saved session record: ${fileName}`);
     });
   });
+
+  const clearButton = document.getElementById('clear-history-selection-button');
+  if (clearButton) {
+    clearButton.addEventListener('click', async () => {
+      viewState.selectedHistoryFile = '';
+      viewState.selectedRecord = null;
+      await renderIntoTarget(target);
+      writePageDiagnostic('Returned to live-only view.');
+    });
+  }
 }
 
 async function renderIntoTarget(target) {
@@ -364,6 +391,8 @@ async function mount() {
     writePageDiagnostic('Test mode seeded confirmation flow.');
     setTimeout(async () => {
       await window.voiceCli?.session?.sendInput?.('yes');
+      viewState.lastOutcome = 'completed';
+      await maybeAutoSelectLatestHistory();
       await renderIntoTarget(target);
       writePageDiagnostic('Test mode auto-approved confirmation flow.');
     }, 150);
@@ -380,6 +409,7 @@ async function mount() {
     viewState.isStartingSession = false;
     viewState.lastOutcome = 'completed';
     stopTimingRefresh();
+    await maybeAutoSelectLatestHistory();
     await renderIntoTarget(target);
     writePageDiagnostic('Test mode started real IPC-backed session flow.');
   }
