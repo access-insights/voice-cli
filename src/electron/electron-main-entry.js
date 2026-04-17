@@ -3,6 +3,9 @@ import { pathToFileURL } from 'node:url';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { loadSessionRecord, loadSessionSummaries, persistSessionRecord, persistSessionSummary } from './main-session-storage.js';
 import { respondToCodexPromptInMain, runCodexVerticalSliceInMain } from './main-session-runner.js';
+import { speakTextInMain } from './main-voice.js';
+import { loadTranscriptionTextInMain, transcribeAudioInMain } from './main-transcription.js';
+import { persistCapturedAudioInMain } from './main-audio-capture.js';
 
 function createDesktopWindowSpec() {
   return {
@@ -146,6 +149,34 @@ if (process.versions.electron) {
     return result;
   });
   electronModule.ipcMain.handle('voice-cli:load-session-record', (_event, fileName) => loadSessionRecord(process.cwd(), fileName));
+  electronModule.ipcMain.handle('voice-cli:speak-text', (_event, payload) => {
+    const result = speakTextInMain(payload?.text, { rate: payload?.rate });
+    writeDiagnostic(`IPC speak-text result: ${JSON.stringify({ ok: result.ok, backend: result.backend ?? null, reason: result.reason ?? null })}`);
+    return result;
+  });
+  electronModule.ipcMain.handle('voice-cli:transcribe-audio', (_event, payload) => {
+    const result = transcribeAudioInMain(payload?.audioPath, {
+      model: payload?.model,
+      language: payload?.language,
+      prompt: payload?.prompt,
+      outPath: payload?.outPath,
+    });
+    writeDiagnostic(`IPC transcribe-audio result: ${JSON.stringify({ ok: result.ok, provider: result.provider ?? null, reason: result.reason ?? null })}`);
+    return result;
+  });
+  electronModule.ipcMain.handle('voice-cli:load-transcription-text', (_event, payload) => {
+    const result = loadTranscriptionTextInMain(payload?.filePath);
+    writeDiagnostic(`IPC load-transcription-text result: ${JSON.stringify({ ok: result.ok, filePath: result.filePath ?? null, reason: result.reason ?? null })}`);
+    return result;
+  });
+  electronModule.ipcMain.handle('voice-cli:persist-captured-audio', (_event, payload) => {
+    const result = persistCapturedAudioInMain(payload?.bufferBase64, {
+      extension: payload?.extension,
+      mimeType: payload?.mimeType,
+    });
+    writeDiagnostic(`IPC persist-captured-audio result: ${JSON.stringify({ ok: result.ok, filePath: result.filePath ?? null, reason: result.reason ?? null })}`);
+    return result;
+  });
   launchElectronApp({
     app: electronModule.app,
     BrowserWindow: electronModule.BrowserWindow,

@@ -19,17 +19,48 @@ const viewState = {
   isStartingSession: false,
   isSessionRunning: false,
   activePrompt: '',
+  draftPrompt: 'Summarize the current project state.',
   runStartedAt: 0,
   timingIntervalId: null,
   lastOutcome: 'idle',
   selectedHistoryFile: '',
   selectedRecord: null,
+  lastSpokenText: '',
+  lastVoiceMessage: '',
+  isRecordingVoice: false,
+  mediaRecorder: null,
+  mediaStream: null,
+  recordedChunks: [],
 };
 
 function getElapsedLabel() {
   if (!viewState.runStartedAt) return 'Not running';
   const elapsedMs = Math.max(0, Date.now() - viewState.runStartedAt);
   return `${(elapsedMs / 1000).toFixed(1)}s`;
+}
+
+async function maybeSpeakRuntimeSummary(runtimeState) {
+  const headline = String(runtimeState?.runtimeSummary?.headline || '').trim();
+  const status = runtimeState?.runtimeSummary?.status || 'ok';
+  const confirmationReason = runtimeState?.confirmation?.reason || '';
+
+  let text = '';
+  if (status === 'needs_confirmation' && confirmationReason) {
+    text = `Confirmation required. ${confirmationReason}`;
+  } else if (status === 'error' && headline) {
+    text = headline;
+  } else if ((viewState.lastOutcome === 'completed' || viewState.isSessionRunning) && headline) {
+    text = headline;
+  }
+
+  if (!text || text === viewState.lastSpokenText) return;
+  viewState.lastSpokenText = text;
+
+  try {
+    await window.voiceCli?.voice?.speakText?.(text, { rate: 1.0 });
+  } catch {
+    // transcript-first fallback, no-op
+  }
 }
 
 function renderBanner(runtimeSummary) {
@@ -177,6 +208,29 @@ function renderHistory(history) {
   `;
 }
 
+function renderVoiceControls() {
+  return `
+    <section aria-labelledby="voice-heading">
+      <h2 id="voice-heading">Voice</h2>
+      <form id="voice-speak-form">
+        <label for="voice-speak-text">Speak text</label>
+        <input id="voice-speak-text" name="text" type="text" value="Voice CLI is ready." />
+        <button id="voice-speak-button" type="submit">Speak</button>
+      </form>
+      <form id="voice-transcribe-form">
+        <label for="voice-transcribe-path">Transcribe audio file</label>
+        <input id="voice-transcribe-path" name="audioPath" type="text" placeholder="/path/to/audio.m4a" />
+        <button id="voice-transcribe-button" type="submit">Transcribe with Whisper</button>
+      </form>
+      <div>
+        <button type="button" id="voice-record-button">${viewState.isRecordingVoice ? 'Stop recording and transcribe' : 'Record and transcribe'}</button>
+        <button type="button" id="voice-start-from-transcript-button" ${viewState.isStartingSession || viewState.isSessionRunning || !String(viewState.draftPrompt || '').trim() ? 'disabled' : ''}>Start session from transcribed prompt</button>
+      </div>
+      ${viewState.lastVoiceMessage ? `<p><strong>Voice status:</strong> ${escapeHtml(viewState.lastVoiceMessage)}</p>` : ''}
+    </section>
+  `;
+}
+
 function renderShell(runtimeState, history) {
   const confirmationSection = runtimeState.confirmation ? `
     <section aria-labelledby="confirmation-heading">
@@ -207,11 +261,12 @@ function renderShell(runtimeState, history) {
       <h2 id="controls-heading">Session controls</h2>
       <form id="session-start-form">
         <label for="session-start-prompt">Start prompt</label>
-        <input id="session-start-prompt" name="prompt" type="text" value="Summarize the current project state." ${startDisabled} />
+        <input id="session-start-prompt" name="prompt" type="text" value="${escapeHtml(viewState.draftPrompt || 'Summarize the current project state.')}" ${startDisabled} />
         <button id="session-start-button" type="submit" ${startDisabled}>${startButtonLabel}</button>
       </form>
     </section>
     ${confirmationSection}
+    ${renderVoiceControls()}
     <section aria-labelledby="transcript-heading">
       <h2 id="transcript-heading">Live transcript</h2>
       ${renderTranscript(transcriptEntries)}
@@ -253,38 +308,106 @@ async function maybeAutoSelectLatestHistory() {
   viewState.selectedRecord = await window.voiceCli?.session?.getSessionRecord?.(latest.fileName);
 }
 
+function stopVoiceStream() {
+  if (viewState.mediaStream) {
+    for (const track of viewState.mediaStream.getTracks()) {
+      track.stop();
+    }
+  }
+  viewState.mediaStream = null;
+  viewState.mediaRecorder = null;
+  viewState.recordedChunks = [];
+  viewState.isRecordingVoice = false;
+}
+
+async function loadTranscriptionText(transcription) {
+  const outPath = String(transcription?.outPath || '').trim();
+  if (!outPath) return '';
+
+  try {
+    const result = await window.voiceCli?.voice?.loadTranscriptionText?.(outPath);
+    return result?.ok ? String(result.text || '').trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+async function persistAndTranscribeRecordedAudio(target) {
+  const blob = new Blob(viewState.recordedChunks, { type: 'audio/webm' });
+  const arrayBuffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const bufferBase64 = btoa(binary);
+
+  const persisted = await window.voiceCli?.voice?.persistCapturedAudio?.(bufferBase64, {
+    extension: 'webm',
+    mimeType: 'audio/webm',
+  });
+
+  if (!persisted?.ok || !persisted?.filePath) {
+    viewState.lastVoiceMessage = `Capture save failed: ${persisted?.reason || 'unknown error'}`;
+    await renderIntoTarget(target);
+    return;
+  }
+
+  const transcription = await window.voiceCli?.voice?.transcribeAudio?.(persisted.filePath, {
+    model: 'whisper-1',
+    language: 'en',
+  });
+
+  if (transcription?.ok) {
+    const transcriptText = await loadTranscriptionText(transcription);
+    if (transcriptText) {
+      viewState.draftPrompt = transcriptText;
+      viewState.lastVoiceMessage = `Recorded audio transcribed and loaded into the prompt. Output: ${transcription.outPath}`;
+    } else {
+      viewState.lastVoiceMessage = `Recorded audio transcribed with ${transcription.provider || 'Whisper'}. Output: ${transcription.outPath}`;
+    }
+  } else {
+    viewState.lastVoiceMessage = `Recorded transcription failed: ${transcription?.reason || 'unknown error'}`;
+  }
+  await renderIntoTarget(target);
+}
+
+async function startSessionFromPrompt(target, prompt) {
+  if (viewState.isStartingSession || viewState.isSessionRunning) return;
+  const normalizedPrompt = String(prompt || '').trim() || 'Summarize the current project state.';
+  viewState.draftPrompt = normalizedPrompt;
+  viewState.isStartingSession = true;
+  viewState.isSessionRunning = false;
+  viewState.activePrompt = normalizedPrompt;
+  viewState.runStartedAt = Date.now();
+  viewState.lastOutcome = 'running';
+  startTimingRefresh(target);
+  await renderIntoTarget(target);
+  writePageDiagnostic(`Submitting prompt: ${normalizedPrompt}`);
+  try {
+    await window.voiceCli?.session?.start?.(normalizedPrompt);
+    viewState.lastOutcome = 'completed';
+    await maybeAutoSelectLatestHistory();
+  } catch (error) {
+    viewState.lastOutcome = 'error';
+    throw error;
+  } finally {
+    viewState.isStartingSession = false;
+    viewState.isSessionRunning = false;
+    stopTimingRefresh();
+    await renderIntoTarget(target);
+  }
+  writePageDiagnostic('Runtime shell rerendered after start.');
+}
+
 async function bindInteractions(target) {
   const form = document.getElementById('session-start-form');
   const promptInput = document.getElementById('session-start-prompt');
   if (form) {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (viewState.isStartingSession || viewState.isSessionRunning) return;
       const prompt = promptInput && 'value' in promptInput && typeof promptInput.value === 'string'
         ? promptInput.value
-        : 'Summarize the current project state.';
-      viewState.isStartingSession = true;
-      viewState.isSessionRunning = false;
-      viewState.activePrompt = prompt;
-      viewState.runStartedAt = Date.now();
-      viewState.lastOutcome = 'running';
-      startTimingRefresh(target);
-      await renderIntoTarget(target);
-      writePageDiagnostic(`Submitting prompt: ${prompt}`);
-      try {
-        await window.voiceCli?.session?.start?.(prompt);
-        viewState.lastOutcome = 'completed';
-        await maybeAutoSelectLatestHistory();
-      } catch (error) {
-        viewState.lastOutcome = 'error';
-        throw error;
-      } finally {
-        viewState.isStartingSession = false;
-        viewState.isSessionRunning = false;
-        stopTimingRefresh();
-        await renderIntoTarget(target);
-      }
-      writePageDiagnostic('Runtime shell rerendered after start.');
+        : (viewState.draftPrompt || 'Summarize the current project state.');
+      await startSessionFromPrompt(target, prompt);
     });
   }
 
@@ -326,6 +449,110 @@ async function bindInteractions(target) {
       writePageDiagnostic('Returned to live-only view.');
     });
   }
+
+  const speakForm = document.getElementById('voice-speak-form');
+  const speakInput = document.getElementById('voice-speak-text');
+  if (speakForm) {
+    speakForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text = speakInput && 'value' in speakInput && typeof speakInput.value === 'string' ? speakInput.value : '';
+      const result = await window.voiceCli?.voice?.speakText?.(text, { rate: 1.0 });
+      viewState.lastVoiceMessage = result?.ok ? `Spoken via ${result.backend || 'tts backend'}.` : `Speak failed: ${result?.reason || 'unknown error'}`;
+      await renderIntoTarget(target);
+      writePageDiagnostic(`Voice speak result: ${viewState.lastVoiceMessage}`);
+    });
+  }
+
+  const transcribeForm = document.getElementById('voice-transcribe-form');
+  const transcribeInput = document.getElementById('voice-transcribe-path');
+  if (transcribeForm) {
+    transcribeForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const audioPath = transcribeInput && 'value' in transcribeInput && typeof transcribeInput.value === 'string' ? transcribeInput.value : '';
+      const result = await window.voiceCli?.voice?.transcribeAudio?.(audioPath, { model: 'whisper-1', language: 'en' });
+      if (result?.ok) {
+        const transcriptText = await loadTranscriptionText(result);
+        if (transcriptText) {
+          viewState.draftPrompt = transcriptText;
+          viewState.lastVoiceMessage = `Transcribed with ${result.provider || 'Whisper'} and loaded into the prompt. Output: ${result.outPath}`;
+        } else {
+          viewState.lastVoiceMessage = `Transcribed with ${result.provider || 'Whisper'}. Output: ${result.outPath}`;
+        }
+      } else {
+        viewState.lastVoiceMessage = `Transcription failed: ${result?.reason || 'unknown error'}`;
+      }
+      await renderIntoTarget(target);
+      writePageDiagnostic(`Voice transcription result: ${viewState.lastVoiceMessage}`);
+    });
+  }
+
+  const recordButton = document.getElementById('voice-record-button');
+  if (recordButton) {
+    recordButton.addEventListener('click', async () => {
+      if (!viewState.isRecordingVoice) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+          viewState.mediaStream = stream;
+          viewState.mediaRecorder = mediaRecorder;
+          viewState.recordedChunks = [];
+          viewState.isRecordingVoice = true;
+          viewState.lastVoiceMessage = 'Recording audio now.';
+
+          mediaRecorder.addEventListener('dataavailable', (event) => {
+            if (event.data && event.data.size > 0) {
+              viewState.recordedChunks.push(event.data);
+            }
+          });
+
+          mediaRecorder.addEventListener('stop', async () => {
+            try {
+              await persistAndTranscribeRecordedAudio(target);
+            } finally {
+              stopVoiceStream();
+            }
+          });
+
+          mediaRecorder.start();
+          await renderIntoTarget(target);
+          writePageDiagnostic('Voice recording started.');
+        } catch (error) {
+          stopVoiceStream();
+          viewState.lastVoiceMessage = `Microphone start failed: ${error instanceof Error ? error.message : String(error)}`;
+          await renderIntoTarget(target);
+          writePageDiagnostic(`Voice recording start failed: ${viewState.lastVoiceMessage}`);
+        }
+        return;
+      }
+
+      try {
+        viewState.lastVoiceMessage = 'Stopping recording and transcribing audio.';
+        await renderIntoTarget(target);
+        viewState.mediaRecorder?.stop();
+        writePageDiagnostic('Voice recording stopped for transcription.');
+      } catch (error) {
+        stopVoiceStream();
+        viewState.lastVoiceMessage = `Microphone stop failed: ${error instanceof Error ? error.message : String(error)}`;
+        await renderIntoTarget(target);
+        writePageDiagnostic(`Voice recording stop failed: ${viewState.lastVoiceMessage}`);
+      }
+    });
+  }
+
+  const startFromTranscriptButton = document.getElementById('voice-start-from-transcript-button');
+  if (startFromTranscriptButton) {
+    startFromTranscriptButton.addEventListener('click', async () => {
+      const prompt = String(viewState.draftPrompt || '').trim();
+      if (!prompt) {
+        viewState.lastVoiceMessage = 'No transcribed prompt is available to start yet.';
+        await renderIntoTarget(target);
+        return;
+      }
+      viewState.lastVoiceMessage = 'Starting session from the current transcribed prompt.';
+      await renderIntoTarget(target);
+      await startSessionFromPrompt(target, prompt);
+    });
+  }
 }
 
 async function renderIntoTarget(target) {
@@ -340,6 +567,7 @@ async function renderIntoTarget(target) {
   const history = Array.isArray(historyResult) ? historyResult : [];
   target.innerHTML = renderShell(runtimeState, history);
   await bindInteractions(target);
+  await maybeSpeakRuntimeSummary(runtimeState);
 }
 
 async function mount() {

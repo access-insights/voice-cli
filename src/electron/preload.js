@@ -285,6 +285,22 @@ contextBridge.exposeInMainWorld('voiceCli', {
     getState: () => runtimeBridge.getState(),
     onEvent: (listener) => runtimeBridge.onEvent(listener),
   },
+  voice: {
+    speakText: (text, options = {}) => ipcRenderer.invoke('voice-cli:speak-text', { text, rate: options.rate }),
+    transcribeAudio: (audioPath, options = {}) => ipcRenderer.invoke('voice-cli:transcribe-audio', {
+      audioPath,
+      model: options.model,
+      language: options.language,
+      prompt: options.prompt,
+      outPath: options.outPath,
+    }),
+    loadTranscriptionText: (filePath) => ipcRenderer.invoke('voice-cli:load-transcription-text', { filePath }),
+    persistCapturedAudio: (bufferBase64, options = {}) => ipcRenderer.invoke('voice-cli:persist-captured-audio', {
+      bufferBase64,
+      extension: options.extension,
+      mimeType: options.mimeType,
+    }),
+  },
   electron: {
     getShellSummary: () => ({ appName: 'voice-cli', windowTitle: 'voice-cli', startRoute: '/' }),
     getConfig: () => ({ appId: 'ai.access-insights.voice-cli', windowTitle: 'voice-cli', rendererEntryHtml: 'website/app-shell.html', preloadEntry: 'src/electron/preload.js' }),
