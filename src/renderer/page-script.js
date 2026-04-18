@@ -179,49 +179,50 @@ function filterTranscriptEntries(entries, filter) {
   return entries;
 }
 
+function getTranscriptEntryLabel(entry) {
+  return entry.kind === 'prompt'
+    ? 'Prompt'
+    : entry.kind === 'error'
+      ? 'Error'
+      : entry.kind === 'lifecycle'
+        ? 'System'
+        : entry.kind === 'change-hint'
+          ? 'Changed files or diff hint'
+          : entry.kind === 'user'
+            ? 'User'
+            : entry.kind === 'assistant'
+              ? 'Assistant summary'
+              : 'Tool output';
+}
+
 function renderTranscript(entries, options = {}) {
   if (!entries.length) {
     return '<p>No transcript captured yet.</p>';
   }
 
   const idPrefix = options.idPrefix || 'transcript-entry';
+  const compact = options.compact !== false;
 
   return `
     <ol>
       ${entries.map((entry, index) => {
-        const label = entry.kind === 'prompt'
-          ? 'Prompt'
-          : entry.kind === 'error'
-            ? 'Error'
-            : entry.kind === 'lifecycle'
-              ? 'System'
-              : entry.kind === 'change-hint'
-                ? 'Changed files or diff hint'
-                : entry.kind === 'user'
-                  ? 'User'
-                  : entry.kind === 'assistant'
-                    ? 'Assistant summary'
-                    : 'Tool output';
-
+        const label = getTranscriptEntryLabel(entry);
         const summaryId = `transcript-summary-${index}`;
         const rawId = `transcript-raw-${index}`;
         const entryAnchorId = `${idPrefix}-${index}`;
         const detailLabel = entry.detailLabel || 'Raw output details';
+        const compactSummary = compact
+          ? `${escapeHtml(label)}: ${escapeHtml(entry.summary)}`
+          : `<strong>${escapeHtml(label)}</strong><p id="${summaryId}">${escapeHtml(entry.summary)}</p>`;
         const rawSection = entry.raw && entry.raw !== entry.summary
           ? `<details><summary aria-controls="${rawId}">${escapeHtml(detailLabel)}</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
           : '';
 
-        const content = `
-          <strong>${escapeHtml(label)}</strong>
-          <p id="${summaryId}">${escapeHtml(entry.summary)}</p>
-          ${rawSection}
-        `;
-
         if (entry.kind === 'lifecycle') {
-          return `<li id="${entryAnchorId}"><details><summary aria-describedby="${summaryId}">${escapeHtml(label)} event</summary>${content}</details></li>`;
+          return `<li id="${entryAnchorId}"><details><summary aria-describedby="${summaryId}">${compactSummary}</summary>${rawSection}</details></li>`;
         }
 
-        return `<li id="${entryAnchorId}">${content}</li>`;
+        return `<li id="${entryAnchorId}"><p id="${summaryId}">${compactSummary}</p>${rawSection}</li>`;
       }).join('')}
     </ol>
   `;
@@ -293,21 +294,6 @@ function renderTranscriptNavigation(entries, options = {}) {
       </div>
       <p><strong>${escapeHtml(filterLabel)}:</strong> ${escapeHtml(filter)}</p>
       ${filteredEntries.length ? '' : `<p>${escapeHtml(emptyMessage)}</p>`}
-    </section>
-  `;
-}
-    <section aria-labelledby="${headingId}">
-      <h3 id="${headingId}">Important details</h3>
-      <ul>
-        <li><strong>Errors in transcript:</strong> ${escapeHtml(summary.errors)}</li>
-        <li><strong>Prompts in transcript:</strong> ${escapeHtml(summary.prompts)}</li>
-        <li><strong>Change hints in transcript:</strong> ${escapeHtml(summary.changes)}</li>
-      </ul>
-      <div aria-label="Transcript quick jumps">
-        ${firstErrorIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstErrorIndex}">Jump to first error</button>` : ''}
-        ${firstPromptIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstPromptIndex}">Jump to first prompt</button>` : ''}
-        ${firstChangeIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstChangeIndex}">Jump to first change hint</button>` : ''}
-      </div>
     </section>
   `;
 }
