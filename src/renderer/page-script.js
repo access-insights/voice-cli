@@ -26,6 +26,8 @@ const viewState = {
   selectedHistoryFile: '',
   selectedRecord: null,
   historyFilter: 'all',
+  liveTranscriptFilter: 'all',
+  savedTranscriptFilter: 'all',
   lastSpokenText: '',
   lastVoiceMessage: '',
   liveMessage: '',
@@ -164,6 +166,19 @@ function summarizeTranscriptEntries(entries) {
   };
 }
 
+function filterTranscriptEntries(entries, filter) {
+  if (filter === 'errors') {
+    return entries.filter((entry) => entry?.kind === 'error');
+  }
+  if (filter === 'prompts') {
+    return entries.filter((entry) => entry?.kind === 'prompt');
+  }
+  if (filter === 'changes') {
+    return entries.filter((entry) => entry?.kind === 'change-hint');
+  }
+  return entries;
+}
+
 function renderTranscript(entries, options = {}) {
   if (!entries.length) {
     return '<p>No transcript captured yet.</p>';
@@ -219,6 +234,7 @@ function renderSelectedRecord() {
 
   const record = viewState.selectedRecord;
   const transcriptEntries = toTranscriptEntries(record);
+  const filteredTranscriptEntries = filterTranscriptEntries(transcriptEntries, viewState.savedTranscriptFilter);
   return `
     <section aria-labelledby="saved-run-heading">
       <h2 id="saved-run-heading">Saved run details</h2>
@@ -234,9 +250,12 @@ function renderSelectedRecord() {
       ${renderTranscriptNavigation(transcriptEntries, {
         headingId: 'saved-run-important-heading',
         idPrefix: 'transcript-entry',
+        filter: viewState.savedTranscriptFilter,
+        filterLabel: 'Saved transcript filter',
+        emptyMessage: 'No saved transcript entries match the current filter.',
       })}
       <button type="button" id="clear-history-selection-button">Back to live view</button>
-      ${renderTranscript(transcriptEntries)}
+      ${renderTranscript(filteredTranscriptEntries)}
     </section>
   `;
 }
@@ -244,12 +263,39 @@ function renderSelectedRecord() {
 function renderTranscriptNavigation(entries, options = {}) {
   const headingId = options.headingId || 'transcript-important-heading';
   const idPrefix = options.idPrefix || 'transcript-entry';
+  const filter = options.filter || 'all';
+  const filterLabel = options.filterLabel || 'Transcript filter';
+  const emptyMessage = options.emptyMessage || 'No transcript entries match the current filter.';
   const summary = summarizeTranscriptEntries(entries);
+  const filteredEntries = filterTranscriptEntries(entries, filter);
   const firstErrorIndex = entries.findIndex((entry) => entry?.kind === 'error');
   const firstPromptIndex = entries.findIndex((entry) => entry?.kind === 'prompt');
   const firstChangeIndex = entries.findIndex((entry) => entry?.kind === 'change-hint');
 
   return `
+    <section aria-labelledby="${headingId}">
+      <h3 id="${headingId}">Important details</h3>
+      <ul>
+        <li><strong>Errors in transcript:</strong> ${escapeHtml(summary.errors)}</li>
+        <li><strong>Prompts in transcript:</strong> ${escapeHtml(summary.prompts)}</li>
+        <li><strong>Change hints in transcript:</strong> ${escapeHtml(summary.changes)}</li>
+      </ul>
+      <div aria-label="Transcript quick jumps">
+        ${firstErrorIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstErrorIndex}">Jump to first error</button>` : ''}
+        ${firstPromptIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstPromptIndex}">Jump to first prompt</button>` : ''}
+        ${firstChangeIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstChangeIndex}">Jump to first change hint</button>` : ''}
+      </div>
+      <div aria-label="Transcript filters">
+        <button type="button" class="transcript-filter-button" data-target-scope="${escapeHtml(idPrefix)}" data-filter="all">All entries</button>
+        <button type="button" class="transcript-filter-button" data-target-scope="${escapeHtml(idPrefix)}" data-filter="errors">Errors</button>
+        <button type="button" class="transcript-filter-button" data-target-scope="${escapeHtml(idPrefix)}" data-filter="changes">Changes</button>
+        <button type="button" class="transcript-filter-button" data-target-scope="${escapeHtml(idPrefix)}" data-filter="prompts">Prompts</button>
+      </div>
+      <p><strong>${escapeHtml(filterLabel)}:</strong> ${escapeHtml(filter)}</p>
+      ${filteredEntries.length ? '' : `<p>${escapeHtml(emptyMessage)}</p>`}
+    </section>
+  `;
+}
     <section aria-labelledby="${headingId}">
       <h3 id="${headingId}">Important details</h3>
       <ul>
@@ -421,6 +467,7 @@ function renderShell(runtimeState, history) {
   ` : '';
 
   const transcriptEntries = toTranscriptEntries(runtimeState);
+  const filteredLiveTranscriptEntries = filterTranscriptEntries(transcriptEntries, viewState.liveTranscriptFilter);
   const readiness = getSetupReadiness();
   const startButtonLabel = viewState.isStartingSession || viewState.isSessionRunning ? 'Running…' : 'Start session';
   const startDisabled = viewState.isStartingSession || viewState.isSessionRunning ? 'disabled' : '';
@@ -452,8 +499,11 @@ function renderShell(runtimeState, history) {
       ${renderTranscriptNavigation(transcriptEntries, {
         headingId: 'live-transcript-important-heading',
         idPrefix: 'live-transcript-entry',
+        filter: viewState.liveTranscriptFilter,
+        filterLabel: 'Live transcript filter',
+        emptyMessage: 'No live transcript entries match the current filter.',
       })}
-      ${renderTranscript(transcriptEntries, { idPrefix: 'live-transcript-entry' })}
+      ${renderTranscript(filteredLiveTranscriptEntries, { idPrefix: 'live-transcript-entry' })}
     </section>
     <section aria-labelledby="history-heading">
       <h2 id="history-heading">Session history</h2>
@@ -677,6 +727,23 @@ async function bindInteractions(target) {
         targetElement.focus();
       }
       writePageDiagnostic(`Transcript quick jump used: ${targetId}`);
+    });
+  });
+
+  document.querySelectorAll('.transcript-filter-button').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const filter = button.getAttribute('data-filter') || 'all';
+      const scope = button.getAttribute('data-target-scope') || '';
+      if (scope === 'live-transcript-entry') {
+        viewState.liveTranscriptFilter = filter;
+        setLiveMessage(`Live transcript filter changed to ${filter}.`);
+      } else {
+        viewState.savedTranscriptFilter = filter;
+        setLiveMessage(`Saved transcript filter changed to ${filter}.`);
+      }
+      await renderIntoTarget(target);
+      focusElementById(scope === 'live-transcript-entry' ? 'transcript-heading' : 'saved-run-heading');
+      writePageDiagnostic(`Transcript filter changed: ${scope} -> ${filter}`);
     });
   });
 
