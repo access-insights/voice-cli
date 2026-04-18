@@ -343,14 +343,17 @@ function renderVoiceControls() {
 function renderShell(runtimeState, history) {
   const confirmationSection = runtimeState.confirmation ? `
     <section aria-labelledby="confirmation-heading">
-      <h2 id="confirmation-heading">Confirmation required</h2>
+      <h2 id="confirmation-heading" tabindex="-1">Confirmation required</h2>
       <p><strong>Action:</strong> ${escapeHtml(runtimeState.confirmation.actionLabel)}</p>
       <p><strong>Reason:</strong> ${escapeHtml(runtimeState.confirmation.reason)}</p>
-      <form id="session-input-form">
+      <p><strong>Risk level:</strong> ${escapeHtml(runtimeState.confirmation.riskLevel || 'high')}</p>
+      <p id="confirmation-help">This response may approve or deny a consequential CLI action. Reply explicitly with <strong>yes</strong> to approve or <strong>no</strong> to deny.</p>
+      <form id="session-input-form" aria-describedby="confirmation-help confirmation-followup-help">
         <label for="session-input-response">Response</label>
         <input id="session-input-response" name="response" type="text" value="${escapeHtml(runtimeState.controls.currentInputDraft || 'yes')}" />
         <button id="session-input-button" type="submit">Send response</button>
       </form>
+      <p id="confirmation-followup-help">After you respond, the runtime status and saved run details will update below.</p>
     </section>
   ` : '';
 
@@ -544,7 +547,13 @@ async function bindInteractions(target) {
       await window.voiceCli?.session?.sendInput?.(response);
       viewState.lastOutcome = 'completed';
       viewState.isSessionRunning = false;
-      setLiveMessage(`Confirmation response sent: ${response}.`);
+      const normalizedResponse = String(response || '').trim().toLowerCase();
+      const followup = normalizedResponse === 'yes' || normalizedResponse === 'y'
+        ? 'The requested action was approved.'
+        : normalizedResponse === 'no' || normalizedResponse === 'n'
+          ? 'The requested action was denied.'
+          : 'The CLI received your response.';
+      setLiveMessage(`Confirmation response sent: ${response}. ${followup}`);
       await maybeAutoSelectLatestHistory();
       await renderIntoTarget(target);
       focusElementById('runtime-heading');
@@ -811,6 +820,7 @@ async function mount() {
     if (event?.type === 'prompt.detected') {
       viewState.isStartingSession = false;
       viewState.isSessionRunning = true;
+      setLiveMessage('Confirmation required. Review the action, reason, and risk before responding yes or no.');
     }
     await renderIntoTarget(target);
     writePageDiagnostic('Runtime shell rerendered after event.');
@@ -822,12 +832,14 @@ async function mount() {
     viewState.runStartedAt = Date.now();
     await window.voiceCli?.session?.start?.('Please approve file changes?');
     await renderIntoTarget(target);
+    focusElementById('confirmation-heading');
     writePageDiagnostic('Test mode seeded confirmation flow.');
     setTimeout(async () => {
       await window.voiceCli?.session?.sendInput?.('yes');
       viewState.lastOutcome = 'completed';
       await maybeAutoSelectLatestHistory();
       await renderIntoTarget(target);
+      focusElementById('runtime-heading');
       writePageDiagnostic('Test mode auto-approved confirmation flow.');
     }, 150);
   }
