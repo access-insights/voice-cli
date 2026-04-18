@@ -24,3 +24,6 @@
 
 ## Honest takeaway
 The voice transcription path is operational end to end on this machine, but a better real speech sample is still needed for a stronger quality claim.
+
+## Speech-quality follow-up status
+A stronger spoken-sample quality validation is currently blocked on this machine because only `spd-say` is available locally, with no simple WAV-export path from the installed TTS tooling.
