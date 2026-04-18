@@ -8,11 +8,13 @@ The voice core should:
 - allow drill-down into raw details
 - preserve trust between summary and verbatim output
 
-## Current scaffold
+## Current implementation
 
-The current scaffold includes:
-- `src/voice/voice-preferences.ts`
-- `src/voice/speech-orchestrator.ts`
+The current Electron path includes:
+- `src/electron/main-voice.js`
+- `src/electron/main-transcription.js`
+- `src/electron/main-audio-capture.js`
+- renderer-side voice status and transcript-first fallback messaging in `src/renderer/page-script.js`
 
 ## Current policy
 
@@ -21,9 +23,16 @@ The current scaffold includes:
 - explicit handling for prompts and errors
 - language and voice preferences stored in a dedicated preferences model
 
+## Current validated state
+
+- local TTS invocation path exists
+- Whisper transcription path works end to end on this machine
+- prompt loading from transcription output works
+- transcript-first fallback messaging is now explicit in the UI
+
 ## Future work
 
-- real STT/TTS providers
+- stronger semantic speech-quality validation with a real spoken sample
 - per-user voice configuration UI
 - interruption handling
 - queueing and playback policy

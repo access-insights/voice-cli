@@ -4,12 +4,12 @@
 
 A non-technical user should be able to start voice-cli, choose a supported CLI, select a local project, test voice preferences, and understand confirmation behavior.
 
-## Current scaffold
+## Current implementation
 
-- `src/settings/settings-store.ts`
-- `src/onboarding/first-run-flow.ts`
-- `website/app-shell.html`
-- `electron.main.config.json`
+- onboarding and setup state live in the Electron shell and main IPC path
+- settings persist to `.voice-cli/settings.json`
+- Codex detection and project-path validation run through main-process handlers
+- the renderer restores saved onboarding state on startup
 
 ## First-run checklist
 
@@ -21,8 +21,7 @@ The current scaffold models these first-run steps:
 
 ## Future work
 
-- persist settings to disk
-- add actual onboarding UI screens
-- add CLI detection and validation
-- add voice preview and mic test
+- add a more guided first-run walkthrough
+- deepen voice preview and mic test behavior
 - add explicit accessibility and keyboard walkthrough
+- reduce setup friction for non-technical users further

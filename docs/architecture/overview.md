@@ -4,12 +4,12 @@
 
 ### Desktop shell
 - Electron
-- TypeScript
-- React renderer UI
+- current renderer is a direct DOM-driven shell
+- TypeScript/React remain optional future evolution, not current implementation truth
 
 ### Process and terminal control
-- node-pty for managed CLI session execution
-- structured process/session manager in the main process
+- current implementation uses main-process child-process execution with structured event emission
+- node-pty remains a future hardening path when richer terminal semantics are required
 
 ### Speech
 - pluggable speech input/output abstraction
@@ -62,6 +62,10 @@
    - risky action confirmation policy
    - explicit labeling of summary versus verbatim output
    - clear current-state reporting
+
+## Current implementation note
+
+The current Electron app now persists structured transcript entries alongside raw session events and spoken summaries. Live and saved views share the same persisted transcript model rather than relying only on renderer-local shaping.
 
 ## Key design answer
 
