@@ -25,6 +25,7 @@ const viewState = {
   lastOutcome: 'idle',
   selectedHistoryFile: '',
   selectedRecord: null,
+  historyFilter: 'all',
   lastSpokenText: '',
   lastVoiceMessage: '',
   liveMessage: '',
@@ -226,6 +227,19 @@ function renderSelectedRecord() {
   `;
 }
 
+function filterHistoryItems(history) {
+  if (viewState.historyFilter === 'errors') {
+    return history.filter((item) => (item.errorCount ?? 0) > 0);
+  }
+  if (viewState.historyFilter === 'changes') {
+    return history.filter((item) => (item.changeHints ?? 0) > 0);
+  }
+  if (viewState.historyFilter === 'prompts') {
+    return history.filter((item) => (item.promptCount ?? 0) > 0);
+  }
+  return history;
+}
+
 function renderHistory(history) {
   if (!history.length) {
     return '<p>No saved sessions yet.</p>';
@@ -234,6 +248,7 @@ function renderHistory(history) {
   const withErrors = history.filter((item) => (item.errorCount ?? 0) > 0);
   const withChanges = history.filter((item) => (item.changeHints ?? 0) > 0);
   const withPrompts = history.filter((item) => (item.promptCount ?? 0) > 0);
+  const filteredHistory = filterHistoryItems(history);
 
   return `
     <section aria-labelledby="history-summary-heading">
@@ -243,27 +258,36 @@ function renderHistory(history) {
         <li><strong>Runs with change hints:</strong> ${escapeHtml(withChanges.length)}</li>
         <li><strong>Runs with prompts:</strong> ${escapeHtml(withPrompts.length)}</li>
       </ul>
+      <div aria-label="History filters">
+        <button type="button" class="history-filter-button" data-filter="all">All runs</button>
+        <button type="button" class="history-filter-button" data-filter="errors">Errors</button>
+        <button type="button" class="history-filter-button" data-filter="changes">Changes</button>
+        <button type="button" class="history-filter-button" data-filter="prompts">Prompts</button>
+      </div>
+      <p><strong>Active filter:</strong> ${escapeHtml(viewState.historyFilter)}</p>
     </section>
-    <ul>
-      ${history.map((item) => {
-        const isSelected = item.fileName === viewState.selectedHistoryFile;
-        const statusLabel = item.runtimeStatus || 'unknown';
-        const badges = [
-          (item.errorCount ?? 0) > 0 ? 'error' : '',
-          (item.changeHints ?? 0) > 0 ? 'changes' : '',
-          (item.promptCount ?? 0) > 0 ? 'prompt' : '',
-        ].filter(Boolean).join(', ') || 'clean';
-        const timingLabel = item.endedAt || item.startedAt || item.timestampGuess || 'unknown time';
-        return `
-          <li>
-            <button type="button" class="history-load-button" data-file-name="${escapeHtml(item.fileName)}">
-              ${isSelected ? 'Selected' : 'Load'}
-            </button>
-            <strong>${isSelected ? '▶ ' : ''}</strong>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | ${escapeHtml(statusLabel)} | exit ${escapeHtml(item.exitCode)} | flags ${escapeHtml(badges)} | ${escapeHtml(timingLabel)} | ${escapeHtml(item.spokenSummary)}
-          </li>
-        `;
-      }).join('')}
-    </ul>
+    ${filteredHistory.length ? `
+      <ul>
+        ${filteredHistory.map((item) => {
+          const isSelected = item.fileName === viewState.selectedHistoryFile;
+          const statusLabel = item.runtimeStatus || 'unknown';
+          const badges = [
+            (item.errorCount ?? 0) > 0 ? 'error' : '',
+            (item.changeHints ?? 0) > 0 ? 'changes' : '',
+            (item.promptCount ?? 0) > 0 ? 'prompt' : '',
+          ].filter(Boolean).join(', ') || 'clean';
+          const timingLabel = item.endedAt || item.startedAt || item.timestampGuess || 'unknown time';
+          return `
+            <li>
+              <button type="button" class="history-load-button" data-file-name="${escapeHtml(item.fileName)}">
+                ${isSelected ? 'Selected' : 'Load'}
+              </button>
+              <strong>${isSelected ? '▶ ' : ''}</strong>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | ${escapeHtml(statusLabel)} | exit ${escapeHtml(item.exitCode)} | flags ${escapeHtml(badges)} | ${escapeHtml(timingLabel)} | ${escapeHtml(item.spokenSummary)}
+            </li>
+          `;
+        }).join('')}
+      </ul>
+    ` : '<p>No saved sessions match the current filter.</p>'}
   `;
 }
 
@@ -571,6 +595,17 @@ async function bindInteractions(target) {
       await renderIntoTarget(target);
       focusElementById('saved-run-heading');
       writePageDiagnostic(`Loaded saved session record: ${fileName}`);
+    });
+  });
+
+  document.querySelectorAll('.history-filter-button').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const filter = button.getAttribute('data-filter') || 'all';
+      viewState.historyFilter = filter;
+      setLiveMessage(`History filter changed to ${filter}.`);
+      await renderIntoTarget(target);
+      focusElementById('history-heading');
+      writePageDiagnostic(`History filter changed: ${filter}`);
     });
   });
 
