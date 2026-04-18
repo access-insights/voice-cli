@@ -199,12 +199,15 @@ function getTranscriptEntryLabel(entry) {
 
 function renderTranscript(entries, options = {}) {
   if (!entries.length) {
-    return '<p>No transcript captured yet.</p>';
+    const emptyMessage = options.emptyMessage || 'No transcript captured yet.';
+    const emptyHint = options.emptyHint || 'Start a session or adjust the current transcript filter.';
+    return `<p>${escapeHtml(emptyMessage)}</p><p>${escapeHtml(emptyHint)}</p>`;
   }
 
   const idPrefix = options.idPrefix || 'transcript-entry';
   const compact = options.compact !== false;
   const expandRawDetails = options.expandRawDetails === true;
+  const noRawDetailMessage = options.noRawDetailMessage || 'No extra raw detail is available for this transcript entry.';
 
   return `
     <ol>
@@ -219,7 +222,7 @@ function renderTranscript(entries, options = {}) {
           : `<strong>${escapeHtml(label)}</strong><p id="${summaryId}">${escapeHtml(entry.summary)}</p>`;
         const rawSection = entry.raw && entry.raw !== entry.summary
           ? `<details ${expandRawDetails ? 'open' : ''}><summary aria-controls="${rawId}">${escapeHtml(detailLabel)}</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
-          : '';
+          : `<p>${escapeHtml(noRawDetailMessage)}</p>`;
 
         if (entry.kind === 'lifecycle') {
           return `<li id="${entryAnchorId}"><details><summary aria-describedby="${summaryId}">${compactSummary}</summary>${rawSection}</details></li>`;
@@ -259,9 +262,16 @@ function renderSelectedRecord() {
         emptyMessage: 'No saved transcript entries match the current filter.',
         rawExpanded: viewState.savedRawDetailsExpanded,
         rawToggleLabel: 'Saved raw details',
+        lowInformationMessage: 'This saved run has limited transcript detail right now.',
+        lowInformationHint: 'Try another saved transcript filter or return to the live runtime view.',
       })}
       <button type="button" id="clear-history-selection-button">Back to live view</button>
-      ${renderTranscript(filteredTranscriptEntries, { expandRawDetails: viewState.savedRawDetailsExpanded })}
+      ${renderTranscript(filteredTranscriptEntries, {
+        expandRawDetails: viewState.savedRawDetailsExpanded,
+        emptyMessage: 'No saved transcript entries are available in this view.',
+        emptyHint: 'Try another filter or return to the live runtime view.',
+        noRawDetailMessage: 'No saved raw detail is available for this transcript entry.',
+      })}
     </section>
   `;
 }
@@ -274,6 +284,8 @@ function renderTranscriptNavigation(entries, options = {}) {
   const emptyMessage = options.emptyMessage || 'No transcript entries match the current filter.';
   const rawExpanded = options.rawExpanded === true;
   const rawToggleLabel = options.rawToggleLabel || 'Visible raw details';
+  const lowInformationMessage = options.lowInformationMessage || 'This transcript is short or summary-only right now.';
+  const lowInformationHint = options.lowInformationHint || 'Try all entries, wait for more runtime events, or inspect saved history if available.';
   const summary = summarizeTranscriptEntries(entries);
   const filteredEntries = filterTranscriptEntries(entries, filter);
   const firstErrorIndex = entries.findIndex((entry) => entry?.kind === 'error');
@@ -304,7 +316,8 @@ function renderTranscriptNavigation(entries, options = {}) {
         <button type="button" class="raw-details-toggle-button" data-target-scope="${escapeHtml(idPrefix)}" data-expanded="${rawExpanded ? 'true' : 'false'}">${rawExpanded ? 'Collapse raw details' : 'Expand raw details'}</button>
       </div>
       <p><strong>${escapeHtml(rawToggleLabel)}:</strong> ${rawExpanded ? 'expanded' : 'collapsed'}</p>
-      ${filteredEntries.length ? '' : `<p>${escapeHtml(emptyMessage)}</p>`}
+      ${filteredEntries.length ? '' : `<p>${escapeHtml(emptyMessage)}</p><p>${escapeHtml(lowInformationHint)}</p>`}
+      ${entries.length > 0 && filteredEntries.length <= 1 ? `<p>${escapeHtml(lowInformationMessage)}</p>` : ''}
     </section>
   `;
 }
@@ -501,10 +514,15 @@ function renderShell(runtimeState, history) {
         emptyMessage: 'No live transcript entries match the current filter.',
         rawExpanded: viewState.liveRawDetailsExpanded,
         rawToggleLabel: 'Live raw details',
+        lowInformationMessage: 'This live run has limited transcript detail so far.',
+        lowInformationHint: 'Wait for more runtime events, switch filters, or review saved runs after completion.',
       })}
       ${renderTranscript(filteredLiveTranscriptEntries, {
         idPrefix: 'live-transcript-entry',
         expandRawDetails: viewState.liveRawDetailsExpanded,
+        emptyMessage: 'No live transcript entries are available in this view.',
+        emptyHint: 'Wait for more runtime events or switch to another transcript filter.',
+        noRawDetailMessage: 'No live raw detail is available for this transcript entry.',
       })}
     </section>
     <section aria-labelledby="history-heading">
