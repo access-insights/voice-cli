@@ -10,6 +10,8 @@ function ensureSessionDir(baseDir = process.cwd()) {
 function toSummaryRecord(name, raw) {
   const transcript = Array.isArray(raw.transcript) ? raw.transcript : [];
   const changeHints = transcript.filter((entry) => entry?.kind === 'change-hint').length;
+  const errorCount = transcript.filter((entry) => entry?.kind === 'error').length;
+  const promptCount = transcript.filter((entry) => entry?.kind === 'prompt').length;
   return {
     fileName: name,
     adapter: raw.adapter ?? 'unknown',
@@ -20,6 +22,8 @@ function toSummaryRecord(name, raw) {
     runtimeStatus: raw.runtimeSummary?.status ?? 'unknown',
     transcriptEntryCount: transcript.length,
     changeHints,
+    errorCount,
+    promptCount,
     startedAt: raw.startedAt ?? '',
     endedAt: raw.endedAt ?? '',
   };

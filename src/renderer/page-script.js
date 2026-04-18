@@ -93,7 +93,7 @@ function renderBanner(runtimeSummary) {
   }
 
   if (runtimeSummary?.status === 'error') {
-    return '<p><strong>Session error.</strong> Review the transcript for stderr and raw output.</p>';
+    return '<p><strong>Session error.</strong> Review the transcript for stderr and raw output, then retry with a simpler prompt or confirm setup and workspace settings.</p>';
   }
 
   if (viewState.lastOutcome === 'completed') {
@@ -218,6 +218,8 @@ function renderSelectedRecord() {
       <p><strong>Workspace:</strong> ${escapeHtml(record.projectPath || 'Unknown')}</p>
       <p><strong>Transcript entries:</strong> ${escapeHtml(record.transcriptEntryCount ?? transcriptEntries.length)}</p>
       <p><strong>Change hints:</strong> ${escapeHtml(record.changeHints ?? 0)}</p>
+      <p><strong>Error entries:</strong> ${escapeHtml(record.errorCount ?? 0)}</p>
+      <p><strong>Prompt entries:</strong> ${escapeHtml(record.promptCount ?? 0)}</p>
       <button type="button" id="clear-history-selection-button">Back to live view</button>
       ${renderTranscript(transcriptEntries)}
     </section>
@@ -229,16 +231,35 @@ function renderHistory(history) {
     return '<p>No saved sessions yet.</p>';
   }
 
+  const withErrors = history.filter((item) => (item.errorCount ?? 0) > 0);
+  const withChanges = history.filter((item) => (item.changeHints ?? 0) > 0);
+  const withPrompts = history.filter((item) => (item.promptCount ?? 0) > 0);
+
   return `
+    <section aria-labelledby="history-summary-heading">
+      <h3 id="history-summary-heading">History summary</h3>
+      <ul>
+        <li><strong>Runs with errors:</strong> ${escapeHtml(withErrors.length)}</li>
+        <li><strong>Runs with change hints:</strong> ${escapeHtml(withChanges.length)}</li>
+        <li><strong>Runs with prompts:</strong> ${escapeHtml(withPrompts.length)}</li>
+      </ul>
+    </section>
     <ul>
       ${history.map((item) => {
         const isSelected = item.fileName === viewState.selectedHistoryFile;
+        const statusLabel = item.runtimeStatus || 'unknown';
+        const badges = [
+          (item.errorCount ?? 0) > 0 ? 'error' : '',
+          (item.changeHints ?? 0) > 0 ? 'changes' : '',
+          (item.promptCount ?? 0) > 0 ? 'prompt' : '',
+        ].filter(Boolean).join(', ') || 'clean';
+        const timingLabel = item.endedAt || item.startedAt || item.timestampGuess || 'unknown time';
         return `
           <li>
             <button type="button" class="history-load-button" data-file-name="${escapeHtml(item.fileName)}">
               ${isSelected ? 'Selected' : 'Load'}
             </button>
-            <strong>${isSelected ? '▶ ' : ''}</strong>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | exit ${escapeHtml(item.exitCode)} | ${escapeHtml(item.runtimeStatus || 'unknown')} | changes ${escapeHtml(item.changeHints ?? 0)} | ${escapeHtml(item.spokenSummary)}
+            <strong>${isSelected ? '▶ ' : ''}</strong>${escapeHtml(item.fileName)} | ${escapeHtml(item.adapter)} | ${escapeHtml(statusLabel)} | exit ${escapeHtml(item.exitCode)} | flags ${escapeHtml(badges)} | ${escapeHtml(timingLabel)} | ${escapeHtml(item.spokenSummary)}
           </li>
         `;
       }).join('')}
@@ -356,7 +377,7 @@ function renderShell(runtimeState, history) {
         <input id="session-start-prompt" name="prompt" type="text" value="${escapeHtml(viewState.draftPrompt || 'Summarize the current project state.')}" ${startDisabled} />
         <button id="session-start-button" type="submit" ${startDisabled}>${startButtonLabel}</button>
       </form>
-      <p id="session-controls-help">Prompt input starts a CLI session in the selected workspace. Transcript details appear below.</p>
+      <p id="session-controls-help">Prompt input starts a CLI session in the selected workspace. Transcript details appear below. If a run fails, retry with a simpler prompt or re-check setup first.</p>
     </section>
     ${confirmationSection}
     ${renderVoiceControls()}
@@ -618,7 +639,7 @@ async function bindInteractions(target) {
         viewState.lastVoiceMessage = `Spoken via ${result.backend || 'tts backend'} at rate ${result.rate || 1.0}.`;
       } else {
         const fallbackHint = result?.fallbackRecommended ? ' Transcript-first fallback remains available.' : '';
-        viewState.lastVoiceMessage = `Speak failed: ${result?.reason || 'unknown error'}.${fallbackHint}`;
+        viewState.lastVoiceMessage = `Speak failed: ${result?.reason || 'unknown error'}.${fallbackHint} Check local TTS availability if this should have spoken aloud.`;
       }
       setLiveMessage(viewState.lastVoiceMessage);
       await renderIntoTarget(target);
@@ -643,7 +664,7 @@ async function bindInteractions(target) {
         }
       } else {
         const fallbackHint = result?.fallbackRecommended ? ' Try transcript-first fallback or a different audio file.' : '';
-        viewState.lastVoiceMessage = `Transcription failed: ${result?.reason || 'unknown error'}.${fallbackHint}`;
+        viewState.lastVoiceMessage = `Transcription failed: ${result?.reason || 'unknown error'}.${fallbackHint} Verify the audio path and file format before retrying.`;
       }
       setLiveMessage(viewState.lastVoiceMessage);
       await renderIntoTarget(target);
