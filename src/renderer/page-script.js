@@ -90,22 +90,22 @@ async function maybeSpeakRuntimeSummary(runtimeState) {
 
 function renderBanner(runtimeSummary) {
   if (viewState.isStartingSession) {
-    return '<p><strong>Starting session...</strong> Initializing the CLI session.</p>';
+    return '<p><strong>Starting session...</strong> Initializing the CLI session. The live runtime view is preparing new output.</p>';
   }
 
   if (viewState.isSessionRunning) {
-    return '<p><strong>Session running.</strong> Live updates will appear as the session progresses.</p>';
+    return '<p><strong>Session running.</strong> Live updates below reflect the current runtime state.</p>';
   }
 
   if (runtimeSummary?.status === 'error') {
-    return '<p><strong>Session error.</strong> Review the transcript for stderr and raw output, then retry with a simpler prompt or confirm setup and workspace settings.</p>';
+    return '<p><strong>Session error.</strong> The live runtime reported a problem. Review the transcript for stderr and raw output, then retry with a simpler prompt or confirm setup and workspace settings.</p>';
   }
 
   if (viewState.lastOutcome === 'completed') {
-    return '<p><strong>Session completed.</strong> Latest results are shown below.</p>';
+    return '<p><strong>Session completed.</strong> The live runtime has finished. Latest live results are shown below unless you open recovered history.</p>';
   }
 
-  return '<p><strong>Ready.</strong> Start a session to view transcript output here.</p>';
+  return '<p><strong>Ready.</strong> No live session is running yet. Start a session to view current runtime output here.</p>';
 }
 
 function renderStatusBadge(runtimeSummary) {
@@ -141,10 +141,18 @@ function renderRunSummary(runtimeState, history) {
   const changeHints = transcript.filter((entry) => entry?.kind === 'change-hint').length;
   const activePrompt = viewState.activePrompt || 'No active prompt';
   const chosenWorkspace = latest?.projectPath || viewState.onboarding?.projectPath || 'No project selected';
+  const liveStateLabel = viewState.selectedRecord
+    ? 'Recovered history is open, but this summary still describes the live runtime.'
+    : viewState.isSessionRunning
+      ? 'This summary reflects the current live runtime.'
+      : viewState.lastOutcome === 'completed'
+        ? 'This summary reflects the latest completed live runtime.'
+        : 'This summary will reflect the live runtime once a session starts.';
 
   return `
     <section aria-labelledby="run-summary-heading">
       <h2 id="run-summary-heading">Latest run</h2>
+      <p><strong>Live summary context:</strong> ${escapeHtml(liveStateLabel)}</p>
       <ul>
         <li><strong>Adapter:</strong> ${escapeHtml(adapter)}</li>
         <li><strong>Workspace:</strong> ${escapeHtml(chosenWorkspace)}</li>
