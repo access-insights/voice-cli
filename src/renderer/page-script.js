@@ -28,6 +28,8 @@ const viewState = {
   historyFilter: 'all',
   liveTranscriptFilter: 'all',
   savedTranscriptFilter: 'all',
+  liveRawDetailsExpanded: false,
+  savedRawDetailsExpanded: false,
   lastSpokenText: '',
   lastVoiceMessage: '',
   liveMessage: '',
@@ -202,6 +204,7 @@ function renderTranscript(entries, options = {}) {
 
   const idPrefix = options.idPrefix || 'transcript-entry';
   const compact = options.compact !== false;
+  const expandRawDetails = options.expandRawDetails === true;
 
   return `
     <ol>
@@ -215,7 +218,7 @@ function renderTranscript(entries, options = {}) {
           ? `${escapeHtml(label)}: ${escapeHtml(entry.summary)}`
           : `<strong>${escapeHtml(label)}</strong><p id="${summaryId}">${escapeHtml(entry.summary)}</p>`;
         const rawSection = entry.raw && entry.raw !== entry.summary
-          ? `<details><summary aria-controls="${rawId}">${escapeHtml(detailLabel)}</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
+          ? `<details ${expandRawDetails ? 'open' : ''}><summary aria-controls="${rawId}">${escapeHtml(detailLabel)}</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
           : '';
 
         if (entry.kind === 'lifecycle') {
@@ -254,9 +257,11 @@ function renderSelectedRecord() {
         filter: viewState.savedTranscriptFilter,
         filterLabel: 'Saved transcript filter',
         emptyMessage: 'No saved transcript entries match the current filter.',
+        rawExpanded: viewState.savedRawDetailsExpanded,
+        rawToggleLabel: 'Saved raw details',
       })}
       <button type="button" id="clear-history-selection-button">Back to live view</button>
-      ${renderTranscript(filteredTranscriptEntries)}
+      ${renderTranscript(filteredTranscriptEntries, { expandRawDetails: viewState.savedRawDetailsExpanded })}
     </section>
   `;
 }
@@ -267,6 +272,8 @@ function renderTranscriptNavigation(entries, options = {}) {
   const filter = options.filter || 'all';
   const filterLabel = options.filterLabel || 'Transcript filter';
   const emptyMessage = options.emptyMessage || 'No transcript entries match the current filter.';
+  const rawExpanded = options.rawExpanded === true;
+  const rawToggleLabel = options.rawToggleLabel || 'Visible raw details';
   const summary = summarizeTranscriptEntries(entries);
   const filteredEntries = filterTranscriptEntries(entries, filter);
   const firstErrorIndex = entries.findIndex((entry) => entry?.kind === 'error');
@@ -293,6 +300,10 @@ function renderTranscriptNavigation(entries, options = {}) {
         <button type="button" class="transcript-filter-button" data-target-scope="${escapeHtml(idPrefix)}" data-filter="prompts">Prompts</button>
       </div>
       <p><strong>${escapeHtml(filterLabel)}:</strong> ${escapeHtml(filter)}</p>
+      <div aria-label="Raw transcript detail controls">
+        <button type="button" class="raw-details-toggle-button" data-target-scope="${escapeHtml(idPrefix)}" data-expanded="${rawExpanded ? 'true' : 'false'}">${rawExpanded ? 'Collapse raw details' : 'Expand raw details'}</button>
+      </div>
+      <p><strong>${escapeHtml(rawToggleLabel)}:</strong> ${rawExpanded ? 'expanded' : 'collapsed'}</p>
       ${filteredEntries.length ? '' : `<p>${escapeHtml(emptyMessage)}</p>`}
     </section>
   `;
@@ -488,8 +499,13 @@ function renderShell(runtimeState, history) {
         filter: viewState.liveTranscriptFilter,
         filterLabel: 'Live transcript filter',
         emptyMessage: 'No live transcript entries match the current filter.',
+        rawExpanded: viewState.liveRawDetailsExpanded,
+        rawToggleLabel: 'Live raw details',
       })}
-      ${renderTranscript(filteredLiveTranscriptEntries, { idPrefix: 'live-transcript-entry' })}
+      ${renderTranscript(filteredLiveTranscriptEntries, {
+        idPrefix: 'live-transcript-entry',
+        expandRawDetails: viewState.liveRawDetailsExpanded,
+      })}
     </section>
     <section aria-labelledby="history-heading">
       <h2 id="history-heading">Session history</h2>
@@ -730,6 +746,22 @@ async function bindInteractions(target) {
       await renderIntoTarget(target);
       focusElementById(scope === 'live-transcript-entry' ? 'transcript-heading' : 'saved-run-heading');
       writePageDiagnostic(`Transcript filter changed: ${scope} -> ${filter}`);
+    });
+  });
+
+  document.querySelectorAll('.raw-details-toggle-button').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const scope = button.getAttribute('data-target-scope') || '';
+      if (scope === 'live-transcript-entry') {
+        viewState.liveRawDetailsExpanded = !viewState.liveRawDetailsExpanded;
+        setLiveMessage(`Live raw details ${viewState.liveRawDetailsExpanded ? 'expanded' : 'collapsed'}.`);
+      } else {
+        viewState.savedRawDetailsExpanded = !viewState.savedRawDetailsExpanded;
+        setLiveMessage(`Saved raw details ${viewState.savedRawDetailsExpanded ? 'expanded' : 'collapsed'}.`);
+      }
+      await renderIntoTarget(target);
+      focusElementById(scope === 'live-transcript-entry' ? 'transcript-heading' : 'saved-run-heading');
+      writePageDiagnostic(`Raw details toggled: ${scope} -> ${scope === 'live-transcript-entry' ? viewState.liveRawDetailsExpanded : viewState.savedRawDetailsExpanded}`);
     });
   });
 
