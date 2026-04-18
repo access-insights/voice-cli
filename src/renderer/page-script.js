@@ -280,6 +280,7 @@ function renderSelectedRecord() {
   return `
     <section aria-labelledby="saved-run-heading">
       <h2 id="saved-run-heading">Saved run details</h2>
+      <p><strong>Recovered history view.</strong> You are inspecting a saved run snapshot, not the current live runtime.</p>
       <p><strong>File:</strong> ${escapeHtml(record.fileName)}</p>
       <p><strong>Summary:</strong> ${escapeHtml(record.spokenSummary)}</p>
       <p><strong>Exit code:</strong> ${escapeHtml(record.exitCode)}</p>
@@ -289,8 +290,9 @@ function renderSelectedRecord() {
       <p><strong>Change hints:</strong> ${escapeHtml(record.changeHints ?? 0)}</p>
       <p><strong>Error entries:</strong> ${escapeHtml(record.errorCount ?? 0)}</p>
       <p><strong>Prompt entries:</strong> ${escapeHtml(record.promptCount ?? 0)}</p>
+      <p><strong>Return path:</strong> Use the button below to go back to the live runtime view.</p>
       ${renderTranscriptNavigation(transcriptEntries, transcriptView)}
-      <button type="button" id="clear-history-selection-button">Back to live view</button>
+      <button type="button" id="clear-history-selection-button">Return to live runtime view</button>
       ${renderTranscript(filteredTranscriptEntries, {
         expandRawDetails: transcriptView.rawExpanded,
         emptyMessage: transcriptView.transcriptEmptyMessage,
@@ -541,6 +543,7 @@ function renderShell(runtimeState, history) {
       ${renderStatusBadge(runtimeState.runtimeSummary)}
       <p>${escapeHtml(runtimeState.runtimeSummary.headline)}</p>
     </section>
+    ${viewState.selectedRecord ? '<p><strong>Live runtime is still available below this recovered history context.</strong></p>' : ''}
     ${renderRunSummary(runtimeState, history)}
     ${renderOnboardingPanel()}
     <section aria-labelledby="controls-heading">
@@ -748,7 +751,7 @@ async function bindInteractions(target) {
       if (!fileName) return;
       viewState.selectedHistoryFile = fileName;
       viewState.selectedRecord = await window.voiceCli?.session?.getSessionRecord?.(fileName);
-      setLiveMessage(`Loaded saved session record ${fileName}.`);
+      setLiveMessage(`Loaded saved session record ${fileName}. You are now viewing recovered history, not the live runtime.`);
       await renderIntoTarget(target);
       focusElementById('saved-run-heading');
       writePageDiagnostic(`Loaded saved session record: ${fileName}`);
@@ -771,7 +774,7 @@ async function bindInteractions(target) {
     clearButton.addEventListener('click', async () => {
       viewState.selectedHistoryFile = '';
       viewState.selectedRecord = null;
-      setLiveMessage('Returned to live runtime view.');
+      setLiveMessage('Returned to live runtime view. Recovered history is no longer selected.');
       await renderIntoTarget(target);
       focusElementById('runtime-heading');
       writePageDiagnostic('Returned to live-only view.');
