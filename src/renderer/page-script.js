@@ -461,6 +461,26 @@ function renderOnboardingPanel() {
   `;
 }
 
+function getConfirmationResponseTone(responseDraft) {
+  const normalized = String(responseDraft || '').trim().toLowerCase();
+  if (normalized === 'yes' || normalized === 'y') {
+    return {
+      label: 'Approve action',
+      guidance: 'This will allow the requested CLI action to continue.',
+    };
+  }
+  if (normalized === 'no' || normalized === 'n') {
+    return {
+      label: 'Deny action',
+      guidance: 'This will stop the requested CLI action.',
+    };
+  }
+  return {
+    label: 'Custom response',
+    guidance: 'Use yes to approve or no to deny unless the prompt explicitly asks for something else.',
+  };
+}
+
 function renderVoiceControls() {
   return `
     <section aria-labelledby="voice-heading">
@@ -485,18 +505,23 @@ function renderVoiceControls() {
 }
 
 function renderShell(runtimeState, history) {
+  const confirmationDraft = runtimeState.controls.currentInputDraft || 'yes';
+  const confirmationTone = getConfirmationResponseTone(confirmationDraft);
   const confirmationSection = runtimeState.confirmation ? `
     <section aria-labelledby="confirmation-heading">
       <h2 id="confirmation-heading" tabindex="-1">Confirmation required</h2>
       <p><strong>Action:</strong> ${escapeHtml(runtimeState.confirmation.actionLabel)}</p>
       <p><strong>Reason:</strong> ${escapeHtml(runtimeState.confirmation.reason)}</p>
       <p><strong>Risk level:</strong> ${escapeHtml(runtimeState.confirmation.riskLevel || 'high')}</p>
+      <p><strong>Decision summary:</strong> ${escapeHtml(confirmationTone.label)}</p>
+      <p><strong>What this means:</strong> ${escapeHtml(confirmationTone.guidance)}</p>
       <p id="confirmation-help">This response may approve or deny a consequential CLI action. Reply explicitly with <strong>yes</strong> to approve or <strong>no</strong> to deny.</p>
-      <form id="session-input-form" aria-describedby="confirmation-help confirmation-followup-help">
+      <form id="session-input-form" aria-describedby="confirmation-help confirmation-followup-help confirmation-decision-help">
         <label for="session-input-response">Response</label>
-        <input id="session-input-response" name="response" type="text" value="${escapeHtml(runtimeState.controls.currentInputDraft || 'yes')}" />
+        <input id="session-input-response" name="response" type="text" value="${escapeHtml(confirmationDraft)}" />
         <button id="session-input-button" type="submit">Send response</button>
       </form>
+      <p id="confirmation-decision-help">Approve means continue the requested action. Deny means stop it.</p>
       <p id="confirmation-followup-help">After you respond, the runtime status and saved run details will update below.</p>
     </section>
   ` : '';
@@ -696,7 +721,10 @@ async function bindInteractions(target) {
       const response = responseInput && 'value' in responseInput && typeof responseInput.value === 'string'
         ? responseInput.value
         : 'yes';
+      const responseTone = getConfirmationResponseTone(response);
       writePageDiagnostic(`Submitting confirmation response: ${response}`);
+      setLiveMessage(`Sending confirmation response. ${responseTone.label}. ${responseTone.guidance}`);
+      await renderIntoTarget(target);
       await window.voiceCli?.session?.sendInput?.(response);
       viewState.lastOutcome = 'completed';
       viewState.isSessionRunning = false;

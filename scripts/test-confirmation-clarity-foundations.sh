@@ -5,13 +5,14 @@ node <<'NODE'
 import { readFileSync } from 'node:fs';
 const source = readFileSync('./src/renderer/page-script.js', 'utf8');
 const required = [
-  'Risk level:',
-  'Reply explicitly with <strong>yes</strong> to approve or <strong>no</strong> to deny.',
-  'After you respond, the runtime status and saved run details will update below.',
-  'The requested action was approved.',
-  'The requested action was denied.',
-  'Confirmation required. Review the action, reason, and risk before responding yes or no.',
-  "focusElementById('confirmation-heading')",
+  'function getConfirmationResponseTone(responseDraft) {',
+  'Decision summary:',
+  'What this means:',
+  'Approve means continue the requested action. Deny means stop it.',
+  'Approve action',
+  'Deny action',
+  'Custom response',
+  'Sending confirmation response.',
 ];
 const missing = required.filter((item) => !source.includes(item));
 if (missing.length) {
