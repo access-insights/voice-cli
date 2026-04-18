@@ -164,10 +164,12 @@ function summarizeTranscriptEntries(entries) {
   };
 }
 
-function renderTranscript(entries) {
+function renderTranscript(entries, options = {}) {
   if (!entries.length) {
     return '<p>No transcript captured yet.</p>';
   }
+
+  const idPrefix = options.idPrefix || 'transcript-entry';
 
   return `
     <ol>
@@ -188,7 +190,7 @@ function renderTranscript(entries) {
 
         const summaryId = `transcript-summary-${index}`;
         const rawId = `transcript-raw-${index}`;
-        const entryAnchorId = `transcript-entry-${index}`;
+        const entryAnchorId = `${idPrefix}-${index}`;
         const detailLabel = entry.detailLabel || 'Raw output details';
         const rawSection = entry.raw && entry.raw !== entry.summary
           ? `<details><summary aria-controls="${rawId}">${escapeHtml(detailLabel)}</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
@@ -217,11 +219,6 @@ function renderSelectedRecord() {
 
   const record = viewState.selectedRecord;
   const transcriptEntries = toTranscriptEntries(record);
-  const transcriptSummary = summarizeTranscriptEntries(transcriptEntries);
-  const firstErrorIndex = transcriptEntries.findIndex((entry) => entry?.kind === 'error');
-  const firstPromptIndex = transcriptEntries.findIndex((entry) => entry?.kind === 'prompt');
-  const firstChangeIndex = transcriptEntries.findIndex((entry) => entry?.kind === 'change-hint');
-
   return `
     <section aria-labelledby="saved-run-heading">
       <h2 id="saved-run-heading">Saved run details</h2>
@@ -234,21 +231,37 @@ function renderSelectedRecord() {
       <p><strong>Change hints:</strong> ${escapeHtml(record.changeHints ?? 0)}</p>
       <p><strong>Error entries:</strong> ${escapeHtml(record.errorCount ?? 0)}</p>
       <p><strong>Prompt entries:</strong> ${escapeHtml(record.promptCount ?? 0)}</p>
-      <section aria-labelledby="saved-run-important-heading">
-        <h3 id="saved-run-important-heading">Important details</h3>
-        <ul>
-          <li><strong>Errors in transcript:</strong> ${escapeHtml(transcriptSummary.errors)}</li>
-          <li><strong>Prompts in transcript:</strong> ${escapeHtml(transcriptSummary.prompts)}</li>
-          <li><strong>Change hints in transcript:</strong> ${escapeHtml(transcriptSummary.changes)}</li>
-        </ul>
-        <div aria-label="Transcript quick jumps">
-          ${firstErrorIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="transcript-entry-${firstErrorIndex}">Jump to first error</button>` : ''}
-          ${firstPromptIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="transcript-entry-${firstPromptIndex}">Jump to first prompt</button>` : ''}
-          ${firstChangeIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="transcript-entry-${firstChangeIndex}">Jump to first change hint</button>` : ''}
-        </div>
-      </section>
+      ${renderTranscriptNavigation(transcriptEntries, {
+        headingId: 'saved-run-important-heading',
+        idPrefix: 'transcript-entry',
+      })}
       <button type="button" id="clear-history-selection-button">Back to live view</button>
       ${renderTranscript(transcriptEntries)}
+    </section>
+  `;
+}
+
+function renderTranscriptNavigation(entries, options = {}) {
+  const headingId = options.headingId || 'transcript-important-heading';
+  const idPrefix = options.idPrefix || 'transcript-entry';
+  const summary = summarizeTranscriptEntries(entries);
+  const firstErrorIndex = entries.findIndex((entry) => entry?.kind === 'error');
+  const firstPromptIndex = entries.findIndex((entry) => entry?.kind === 'prompt');
+  const firstChangeIndex = entries.findIndex((entry) => entry?.kind === 'change-hint');
+
+  return `
+    <section aria-labelledby="${headingId}">
+      <h3 id="${headingId}">Important details</h3>
+      <ul>
+        <li><strong>Errors in transcript:</strong> ${escapeHtml(summary.errors)}</li>
+        <li><strong>Prompts in transcript:</strong> ${escapeHtml(summary.prompts)}</li>
+        <li><strong>Change hints in transcript:</strong> ${escapeHtml(summary.changes)}</li>
+      </ul>
+      <div aria-label="Transcript quick jumps">
+        ${firstErrorIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstErrorIndex}">Jump to first error</button>` : ''}
+        ${firstPromptIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstPromptIndex}">Jump to first prompt</button>` : ''}
+        ${firstChangeIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="${idPrefix}-${firstChangeIndex}">Jump to first change hint</button>` : ''}
+      </div>
     </section>
   `;
 }
@@ -436,7 +449,11 @@ function renderShell(runtimeState, history) {
     ${renderVoiceControls()}
     <section aria-labelledby="transcript-heading">
       <h2 id="transcript-heading">Live transcript</h2>
-      ${renderTranscript(transcriptEntries)}
+      ${renderTranscriptNavigation(transcriptEntries, {
+        headingId: 'live-transcript-important-heading',
+        idPrefix: 'live-transcript-entry',
+      })}
+      ${renderTranscript(transcriptEntries, { idPrefix: 'live-transcript-entry' })}
     </section>
     <section aria-labelledby="history-heading">
       <h2 id="history-heading">Session history</h2>
