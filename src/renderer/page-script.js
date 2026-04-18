@@ -234,6 +234,40 @@ function renderTranscript(entries, options = {}) {
   `;
 }
 
+function getLiveTranscriptViewOptions() {
+  return {
+    idPrefix: 'live-transcript-entry',
+    headingId: 'live-transcript-important-heading',
+    filter: viewState.liveTranscriptFilter,
+    filterLabel: 'Live transcript filter',
+    emptyMessage: 'No live transcript entries match the current filter.',
+    rawExpanded: viewState.liveRawDetailsExpanded,
+    rawToggleLabel: 'Live raw details',
+    lowInformationMessage: 'This live run has limited transcript detail so far.',
+    lowInformationHint: 'Wait for more runtime events, switch filters, or review saved runs after completion.',
+    transcriptEmptyMessage: 'No live transcript entries are available in this view.',
+    transcriptEmptyHint: 'Wait for more runtime events or switch to another transcript filter.',
+    noRawDetailMessage: 'No live raw detail is available for this transcript entry.',
+  };
+}
+
+function getSavedTranscriptViewOptions() {
+  return {
+    idPrefix: 'transcript-entry',
+    headingId: 'saved-run-important-heading',
+    filter: viewState.savedTranscriptFilter,
+    filterLabel: 'Saved transcript filter',
+    emptyMessage: 'No saved transcript entries match the current filter.',
+    rawExpanded: viewState.savedRawDetailsExpanded,
+    rawToggleLabel: 'Saved raw details',
+    lowInformationMessage: 'This saved run has limited transcript detail right now.',
+    lowInformationHint: 'Try another saved transcript filter or return to the live runtime view.',
+    transcriptEmptyMessage: 'No saved transcript entries are available in this view.',
+    transcriptEmptyHint: 'Try another filter or return to the live runtime view.',
+    noRawDetailMessage: 'No saved raw detail is available for this transcript entry.',
+  };
+}
+
 function renderSelectedRecord() {
   if (!viewState.selectedRecord) {
     return '<p>No saved run selected.</p>';
@@ -241,7 +275,8 @@ function renderSelectedRecord() {
 
   const record = viewState.selectedRecord;
   const transcriptEntries = toTranscriptEntries(record);
-  const filteredTranscriptEntries = filterTranscriptEntries(transcriptEntries, viewState.savedTranscriptFilter);
+  const transcriptView = getSavedTranscriptViewOptions();
+  const filteredTranscriptEntries = filterTranscriptEntries(transcriptEntries, transcriptView.filter);
   return `
     <section aria-labelledby="saved-run-heading">
       <h2 id="saved-run-heading">Saved run details</h2>
@@ -254,23 +289,13 @@ function renderSelectedRecord() {
       <p><strong>Change hints:</strong> ${escapeHtml(record.changeHints ?? 0)}</p>
       <p><strong>Error entries:</strong> ${escapeHtml(record.errorCount ?? 0)}</p>
       <p><strong>Prompt entries:</strong> ${escapeHtml(record.promptCount ?? 0)}</p>
-      ${renderTranscriptNavigation(transcriptEntries, {
-        headingId: 'saved-run-important-heading',
-        idPrefix: 'transcript-entry',
-        filter: viewState.savedTranscriptFilter,
-        filterLabel: 'Saved transcript filter',
-        emptyMessage: 'No saved transcript entries match the current filter.',
-        rawExpanded: viewState.savedRawDetailsExpanded,
-        rawToggleLabel: 'Saved raw details',
-        lowInformationMessage: 'This saved run has limited transcript detail right now.',
-        lowInformationHint: 'Try another saved transcript filter or return to the live runtime view.',
-      })}
+      ${renderTranscriptNavigation(transcriptEntries, transcriptView)}
       <button type="button" id="clear-history-selection-button">Back to live view</button>
       ${renderTranscript(filteredTranscriptEntries, {
-        expandRawDetails: viewState.savedRawDetailsExpanded,
-        emptyMessage: 'No saved transcript entries are available in this view.',
-        emptyHint: 'Try another filter or return to the live runtime view.',
-        noRawDetailMessage: 'No saved raw detail is available for this transcript entry.',
+        expandRawDetails: transcriptView.rawExpanded,
+        emptyMessage: transcriptView.transcriptEmptyMessage,
+        emptyHint: transcriptView.transcriptEmptyHint,
+        noRawDetailMessage: transcriptView.noRawDetailMessage,
       })}
     </section>
   `;
@@ -477,7 +502,8 @@ function renderShell(runtimeState, history) {
   ` : '';
 
   const transcriptEntries = toTranscriptEntries(runtimeState);
-  const filteredLiveTranscriptEntries = filterTranscriptEntries(transcriptEntries, viewState.liveTranscriptFilter);
+  const transcriptView = getLiveTranscriptViewOptions();
+  const filteredLiveTranscriptEntries = filterTranscriptEntries(transcriptEntries, transcriptView.filter);
   const readiness = getSetupReadiness();
   const startButtonLabel = viewState.isStartingSession || viewState.isSessionRunning ? 'Running…' : 'Start session';
   const startDisabled = viewState.isStartingSession || viewState.isSessionRunning ? 'disabled' : '';
@@ -506,23 +532,13 @@ function renderShell(runtimeState, history) {
     ${renderVoiceControls()}
     <section aria-labelledby="transcript-heading">
       <h2 id="transcript-heading">Live transcript</h2>
-      ${renderTranscriptNavigation(transcriptEntries, {
-        headingId: 'live-transcript-important-heading',
-        idPrefix: 'live-transcript-entry',
-        filter: viewState.liveTranscriptFilter,
-        filterLabel: 'Live transcript filter',
-        emptyMessage: 'No live transcript entries match the current filter.',
-        rawExpanded: viewState.liveRawDetailsExpanded,
-        rawToggleLabel: 'Live raw details',
-        lowInformationMessage: 'This live run has limited transcript detail so far.',
-        lowInformationHint: 'Wait for more runtime events, switch filters, or review saved runs after completion.',
-      })}
+      ${renderTranscriptNavigation(transcriptEntries, transcriptView)}
       ${renderTranscript(filteredLiveTranscriptEntries, {
-        idPrefix: 'live-transcript-entry',
-        expandRawDetails: viewState.liveRawDetailsExpanded,
-        emptyMessage: 'No live transcript entries are available in this view.',
-        emptyHint: 'Wait for more runtime events or switch to another transcript filter.',
-        noRawDetailMessage: 'No live raw detail is available for this transcript entry.',
+        idPrefix: transcriptView.idPrefix,
+        expandRawDetails: transcriptView.rawExpanded,
+        emptyMessage: transcriptView.transcriptEmptyMessage,
+        emptyHint: transcriptView.transcriptEmptyHint,
+        noRawDetailMessage: transcriptView.noRawDetailMessage,
       })}
     </section>
     <section aria-labelledby="history-heading">
