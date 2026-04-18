@@ -156,6 +156,14 @@ function renderRunSummary(runtimeState, history) {
   `;
 }
 
+function summarizeTranscriptEntries(entries) {
+  return {
+    errors: entries.filter((entry) => entry?.kind === 'error').length,
+    prompts: entries.filter((entry) => entry?.kind === 'prompt').length,
+    changes: entries.filter((entry) => entry?.kind === 'change-hint').length,
+  };
+}
+
 function renderTranscript(entries) {
   if (!entries.length) {
     return '<p>No transcript captured yet.</p>';
@@ -180,6 +188,7 @@ function renderTranscript(entries) {
 
         const summaryId = `transcript-summary-${index}`;
         const rawId = `transcript-raw-${index}`;
+        const entryAnchorId = `transcript-entry-${index}`;
         const detailLabel = entry.detailLabel || 'Raw output details';
         const rawSection = entry.raw && entry.raw !== entry.summary
           ? `<details><summary aria-controls="${rawId}">${escapeHtml(detailLabel)}</summary><pre id="${rawId}">${escapeHtml(entry.raw)}</pre></details>`
@@ -192,10 +201,10 @@ function renderTranscript(entries) {
         `;
 
         if (entry.kind === 'lifecycle') {
-          return `<li><details><summary aria-describedby="${summaryId}">${escapeHtml(label)} event</summary>${content}</details></li>`;
+          return `<li id="${entryAnchorId}"><details><summary aria-describedby="${summaryId}">${escapeHtml(label)} event</summary>${content}</details></li>`;
         }
 
-        return `<li>${content}</li>`;
+        return `<li id="${entryAnchorId}">${content}</li>`;
       }).join('')}
     </ol>
   `;
@@ -208,6 +217,10 @@ function renderSelectedRecord() {
 
   const record = viewState.selectedRecord;
   const transcriptEntries = toTranscriptEntries(record);
+  const transcriptSummary = summarizeTranscriptEntries(transcriptEntries);
+  const firstErrorIndex = transcriptEntries.findIndex((entry) => entry?.kind === 'error');
+  const firstPromptIndex = transcriptEntries.findIndex((entry) => entry?.kind === 'prompt');
+  const firstChangeIndex = transcriptEntries.findIndex((entry) => entry?.kind === 'change-hint');
 
   return `
     <section aria-labelledby="saved-run-heading">
@@ -221,6 +234,19 @@ function renderSelectedRecord() {
       <p><strong>Change hints:</strong> ${escapeHtml(record.changeHints ?? 0)}</p>
       <p><strong>Error entries:</strong> ${escapeHtml(record.errorCount ?? 0)}</p>
       <p><strong>Prompt entries:</strong> ${escapeHtml(record.promptCount ?? 0)}</p>
+      <section aria-labelledby="saved-run-important-heading">
+        <h3 id="saved-run-important-heading">Important details</h3>
+        <ul>
+          <li><strong>Errors in transcript:</strong> ${escapeHtml(transcriptSummary.errors)}</li>
+          <li><strong>Prompts in transcript:</strong> ${escapeHtml(transcriptSummary.prompts)}</li>
+          <li><strong>Change hints in transcript:</strong> ${escapeHtml(transcriptSummary.changes)}</li>
+        </ul>
+        <div aria-label="Transcript quick jumps">
+          ${firstErrorIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="transcript-entry-${firstErrorIndex}">Jump to first error</button>` : ''}
+          ${firstPromptIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="transcript-entry-${firstPromptIndex}">Jump to first prompt</button>` : ''}
+          ${firstChangeIndex >= 0 ? `<button type="button" class="transcript-jump-button" data-target-id="transcript-entry-${firstChangeIndex}">Jump to first change hint</button>` : ''}
+        </div>
+      </section>
       <button type="button" id="clear-history-selection-button">Back to live view</button>
       ${renderTranscript(transcriptEntries)}
     </section>
@@ -620,6 +646,22 @@ async function bindInteractions(target) {
       writePageDiagnostic('Returned to live-only view.');
     });
   }
+
+  document.querySelectorAll('.transcript-jump-button').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const targetId = button.getAttribute('data-target-id') || '';
+      if (!targetId) return;
+      setLiveMessage(`Jumping to ${targetId.replace('transcript-entry-', 'transcript entry ')}.`);
+      const targetElement = document.getElementById(targetId);
+      if (targetElement && typeof targetElement.scrollIntoView === 'function') {
+        targetElement.scrollIntoView({ block: 'center' });
+      }
+      if (targetElement && typeof targetElement.focus === 'function') {
+        targetElement.focus();
+      }
+      writePageDiagnostic(`Transcript quick jump used: ${targetId}`);
+    });
+  });
 
   const detectCodexButton = document.getElementById('onboarding-detect-codex-button');
   if (detectCodexButton) {
